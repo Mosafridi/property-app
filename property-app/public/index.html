@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>Dublin Property Listings</title>
+        <style>
+            body{font-family:Arial,sans-serif;margin:0;padding:20px;background:#f4f4f4;}
+            nav{background:#2c3e50;padding:10px;margin-bottom:20px;}
+            nav a{color:#fff;text-decoration:none;margin-right:15px;}
+            nav a:hover{text-decoration:underline;}
+            h1{color:#2c3e50;}
+            #listings-container{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:20px;margin-top:20px;}
+            .listing-card{background:#fff;padding:15px;border-radius:8px;box-shadow:0 2px 5px rgba(0,0,0,0.1);position:relative;cursor:pointer;}
+            .listing-card-inner{position:relative;}
+            .listing-card img{width:100%;height:180px;object-fit:cover;border-radius:4px;display:block;}
+            .status-badge{position:absolute;top:5px;left:5px;background:rgba(44,62,80,0.9);color:#fff;padding:5px 10px;border-radius:4px;font-size:12px;text-transform:uppercase;}
+            .listing-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);display:none;border-radius:4px;}
+            .listing-card-inner:hover .listing-overlay{display:block;}
+            .listing-card h3{margin:10px 0 5px 0;font-size:16px;}
+            .listing-card p{margin:4px 0;font-size:13px;color:#555;}
+            .price-tag{font-size:18px;font-weight:bold;color:#2c3e50;}
+            .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;}
+            .modal-content{background:#fff;padding:30px;border-radius:8px;max-width:600px;width:90%;max-height:85vh;overflow-y:auto;position:relative;}
+            .modal-close{position:absolute;top:10px;right:15px;font-size:28px;cursor:pointer;color:#666;}
+            .modal-close:hover{color:#000;}
+            .modal h2{margin-top:0;color:#2c3e50;}
+            .modal label{display:block;margin:12px 0 5px;font-weight:bold;color:#2c3e50;}
+            .modal input[type="number"],.modal input[type="file"],.modal select{width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box;}
+            .info-field{background:#f9f9f9;padding:10px;border-radius:4px;margin-bottom:10px;}
+            .info-field label{margin:0;color:#666;font-weight:bold;display:block;}
+            .info-field p{margin:5px 0 0;color:#333;}
+            .modal-buttons{margin-top:20px;display:flex;gap:10px;}
+            .modal-buttons button{flex:1;padding:10px;border:none;color:#fff;border-radius:4px;cursor:pointer;}
+            #updateBtn{background:#2c3e50;}
+            #updateBtn:hover:not(:disabled){background:#1a252f;}
+            #updateBtn:disabled{opacity:0.5;cursor:not-allowed;}
+            #deleteBtn{background:#c0392b;}
+            #deleteBtn:hover{background:#992d22;}
+            .filters{display:flex;gap:15px;margin-bottom:20px;align-items:center;flex-wrap:wrap;}
+            .filters select{padding:8px 12px;border:1px solid #ddd;border-radius:4px;font-size:14px;background:#fff;cursor:pointer;}
+            .filters label{font-weight:bold;color:#2c3e50;}
+            .field-hint{display:block;font-size:12px;color:#888;margin:-2px 0 8px;}
+            .field-hint.ok{color:#27ae60;}
+            .field-hint.bad{color:#c0392b;}
+            input.field-ok{border-color:#27ae60;}
+            input.field-bad{border-color:#c0392b;}
+        </style>
+    </head>
+    <body>
+        <nav>
+            <a href="index.html">Home</a>
+            <a href="add.html">Add Listing</a>
+            <a href="analytics.html">Analytics</a>
+        </nav>
+        <h1>Dublin Property Listings</h1>
+        <div class="filters">
+            <label for="listingTypeFilter">Type:</label>
+            <select id="listingTypeFilter" onchange="applyFilters()">
+                <option value="all">All</option>
+                <option value="sale">For Sale</option>
+                <option value="lease">For Lease</option>
+            </select>
+            <label for="propertyTypeFilter">Property:</label>
+            <select id="propertyTypeFilter" onchange="applyFilters()">
+                <option value="all">All</option>
+                <option value="house">House</option>
+                <option value="apartment">Apartment</option>
+                <option value="bungalow">Bungalow</option>
+                <option value="duplex">Duplex</option>
+            </select>
+            <label for="statusFilter">Status:</label>
+            <select id="statusFilter" onchange="applyFilters()">
+                <option value="all">All</option>
+                <option value="available">Available</option>
+                <option value="sale agreed">Sale Agreed</option>
+                <option value="leased">Leased</option>
+                <option value="sold">Sold</option>
+                <option value="withdrawn">Withdrawn</option>
+            </select>
+            <label for="agentFilter">Agent:</label>
+            <select id="agentFilter" onchange="applyFilters()">
+                <option value="all">All</option>
+            </select>
+            <label for="bedroomsFilter">Bedrooms:</label>
+            <select id="bedroomsFilter" onchange="applyFilters()">
+                <option value="all">Any</option>
+                <option value="1">1+</option>
+                <option value="2">2+</option>
+                <option value="3">3+</option>
+                <option value="4">4+</option>
+                <option value="5">5+</option>
+            </select>
+            <label for="bathroomsFilter">Bathrooms:</label>
+            <select id="bathroomsFilter" onchange="applyFilters()">
+                <option value="all">Any</option>
+                <option value="1">1+</option>
+                <option value="2">2+</option>
+                <option value="3">3+</option>
+                <option value="4">4+</option>
+                <option value="5">5+</option>
+            </select>
+            <label for="sortBy">Sort:</label>
+            <select id="sortBy" onchange="applyFilters()">
+                <option value="date-desc">Date Listed (Newest)</option>
+                <option value="date-asc">Date Listed (Oldest)</option>
+                <option value="price-asc">Price (Low to High)</option>
+                <option value="price-desc">Price (High to Low)</option>
+            </select>
+        </div>
+        <div id="listings-container"></div>
+
+        <div id="listingModal" class="modal">
+            <div class="modal-content">
+                <span class="modal-close" onclick="closeListingModal()">&times;</span>
+                <h2 id="modalTitle"></h2>
+                <img id="modalImage" src="" alt="" style="width:100%;height:220px;object-fit:cover;border-radius:4px;margin-bottom:15px;">
+
+                <label for="modalImageFile">Replace photo (JPG/PNG):</label>
+                <input id="modalImageFile" type="file" accept="image/jpeg,image/png" onchange="onFieldChange()">
+                <label style="font-weight:normal;display:flex;align-items:center;gap:6px;margin:8px 0;">
+                    <input id="modalRemoveImage" type="checkbox" style="width:auto;" onchange="onFieldChange()"> Remove current photo
+                </label>
+
+                <label for="modalPrice">Price</label>
+                <input id="modalPrice" type="number" min="1" oninput="onFieldChange()">
+                <small id="modalPriceHint" class="field-hint"></small>
+
+                <label for="modalBedrooms">Bedrooms</label>
+                <input id="modalBedrooms" type="number" min="1" oninput="onFieldChange()">
+                <small id="modalBedroomsHint" class="field-hint"></small>
+
+                <label for="modalBathrooms">Bathrooms</label>
+                <input id="modalBathrooms" type="number" min="1" oninput="onFieldChange()">
+                <small id="modalBathroomsHint" class="field-hint"></small>
+
+                <label for="modalStatusSelect">Status</label>
+                <!-- Options here are filled in by openListingModal() rather than fixed in HTML,
+                     since which statuses are valid depends on whether this is a sale or lease
+                     listing - see STATUS_BY_LISTING_TYPE in app.js. -->
+                <select id="modalStatusSelect" onchange="onFieldChange()"></select>
+
+                <div class="info-field">
+                    <label>Address</label>
+                    <p id="modalAddress"></p>
+                </div>
+                <div class="info-field">
+                    <label>Eircode</label>
+                    <p id="modalEircode"></p>
+                </div>
+                <div class="info-field">
+                    <label>Features</label>
+                    <p id="modalFeatures"></p>
+                </div>
+                <div class="info-field">
+                    <label>Agent</label>
+                    <p id="modalAgent"></p>
+                </div>
+                <div class="modal-buttons">
+                    <button id="updateBtn" onclick="updateListing()" disabled style="background:#2c3e50;">Save Changes</button>
+                    <button id="deleteBtn" onclick="confirmDelete()">Delete Listing</button>
+                </div>
+            </div>
+        </div>
+        <script src="app.js"></script>
+    </body>
+</html>

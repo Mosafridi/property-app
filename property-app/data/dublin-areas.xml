@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- This is our reference dataset for Dublin postal districts (Eircode routing keys). -->
+<!-- I only use the real, existing Dublin districts (D01-D18, D20, D22, D24, D6W). -->
+<!-- Each area has a small set of well-known real streets, just enough to demo the cascading dropdown.For a real-world application, this list would be fetched from  an API -->
+<dublinAreas>
+  <area routingKey="D01">
+    <name>Dublin 1 (North City)</name>
+    <streets>
+      <street>O'Connell Street</street>
+      <street>Talbot Street</street>
+      <street>Amiens Street</street>
+      <street>Mayor Street</street>
+    </streets>
+  </area>
+  <area routingKey="D02">
+    <name>Dublin 2 (South City Centre)</name>
+    <streets>
+      <street>Grafton Street</street>
+      <street>Dawson Street</street>
+      <street>Kildare Street</street>
+      <street>St Stephen's Green</street>
+    </streets>
+  </area>
+  <area routingKey="D03">
+    <name>Dublin 3 (Clontarf)</name>
+    <streets>
+      <street>Vernon Avenue</street>
+      <street>Clontarf Road</street>
+      <street>Castle Avenue</street>
+    </streets>
+  </area>
+  <area routingKey="D04">
+    <name>Dublin 4 (Ballsbridge / Donnybrook)</name>
+    <streets>
+      <street>Merrion Road</street>
+      <street>Northumberland Road</street>
+      <street>Morehampton Road</street>
+    </streets>
+  </area>
+  <area routingKey="D05">
+    <name>Dublin 5 (Raheny / Kilbarrack)</name>
+    <streets>
+      <street>Howth Road</street>
+      <street>Kilbarrack Road</street>
+      <street>Watermill Road</street>
+    </streets>
+  </area>
+  <area routingKey="D06">
+    <name>Dublin 6 (Rathmines / Ranelagh)</name>
+    <streets>
+      <street>Rathmines Road</street>
+      <street>Ranelagh Road</street>
+      <street>Rathgar Road</street>
+    </streets>
+  </area>
+  <area routingKey="D6W">
+    <name>Dublin 6W (Terenure)</name>
+    <streets>
+      <street>Terenure Road</street>
+      <street>Fortfield Road</street>
+    </streets>
+  </area>
+  <area routingKey="D07">
+    <name>Dublin 7 (Phibsborough / Cabra)</name>
+    <streets>
+      <street>Phibsborough Road</street>
+      <street>Cabra Road</street>
+      <street>North Circular Road</street>
+    </streets>
+  </area>
+  <area routingKey="D08">
+    <name>Dublin 8 (The Liberties)</name>
+    <streets>
+      <street>Thomas Street</street>
+      <street>Meath Street</street>
+      <street>Cork Street</street>
+    </streets>
+  </area>
+  <area routingKey="D09">
+    <name>Dublin 9 (Whitehall / Marino)</name>
+    <streets>
+      <street>Griffith Avenue</street>
+      <street>Swords Road</street>
+      <street>Malahide Road</street>
+    </streets>
+  </area>
+  <area routingKey="D10">
+    <name>Dublin 10 (Ballyfermot)</name>
+    <streets>
+      <street>Ballyfermot Road</street>
+      <street>Decies Road</street>
+    </streets>
+  </area>
+  <area routingKey="D11">
+    <name>Dublin 11 (Finglas)</name>
+    <streets>
+      <street>Finglas Road</street>
+      <street>Jamestown Road</street>
+    </streets>
+  </area>
+  <area routingKey="D12">
+    <name>Dublin 12 (Crumlin / Walkinstown)</name>
+    <streets>
+      <street>Crumlin Road</street>
+      <street>Walkinstown Road</street>
+    </streets>
+  </area>
+  <area routingKey="D13">
+    <name>Dublin 13 (Sutton / Baldoyle)</name>
+    <streets>
+      <street>Sutton Cross</street>
+      <street>Baldoyle Road</street>
+      <street>Howth Road</street>
+    </streets>
+  </area>
+  <area routingKey="D14">
+    <name>Dublin 14 (Dundrum / Churchtown)</name>
+    <streets>
+      <street>Dundrum Road</street>
+      <street>Churchtown Road</street>
+    </streets>
+  </area>
+  <area routingKey="D15">
+    <name>Dublin 15 (Blanchardstown / Castleknock)</name>
+    <streets>
+      <street>Blanchardstown Road</street>
+      <street>Castleknock Road</street>
+      <street>Navan Road</street>
+    </streets>
+  </area>
+  <area routingKey="D16">
+    <name>Dublin 16 (Ballinteer)</name>
+    <streets>
+      <street>Ballinteer Road</street>
+      <street>Broadford Road</street>
+    </streets>
+  </area>
+  <area routingKey="D17">
+    <name>Dublin 17 (Coolock / Darndale)</name>
+    <streets>
+      <street>Malahide Road</street>
+      <street>Coolock Lane</street>
+    </streets>
+  </area>
+  <area routingKey="D18">
+    <name>Dublin 18 (Sandyford / Foxrock / Cabinteely)</name>
+    <streets>
+      <street>Sandyford Road</street>
+      <street>Brighton Road</street>
+      <street>Foxrock Avenue</street>
+    </streets>
+  </area>
+  <area routingKey="D20">
+    <name>Dublin 20 (Palmerstown)</name>
+    <streets>
+      <street>Palmerstown Avenue</street>
+      <street>Kennelsfort Road</street>
+    </streets>
+  </area>
+  <area routingKey="D22">
+    <name>Dublin 22 (Clondalkin)</name>
+    <streets>
+      <street>Clondalkin Village</street>
+      <street>Monastery Road</street>
+    </streets>
+  </area>
+  <area routingKey="D24">
+    <name>Dublin 24 (Tallaght)</name>
+    <streets>
+      <street>Tallaght Road</street>
+      <street>Belgard Road</street>
+    </streets>
+  </area>
+</dublinAreas>

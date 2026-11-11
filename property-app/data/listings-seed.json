@@ -1,0 +1,553 @@
+[
+  {
+    "title": "3-bed duplex on O'Connell Street",
+    "propertyType": "duplex",
+    "listingType": "sale",
+    "price": 228500,
+    "bedrooms": 3,
+    "bathrooms": 2,
+    "routingKey": "D01",
+    "street": "O'Connell Street",
+    "eircode": "D01 0A0A",
+    "agentEmail": "siobhan.byrne@dublinhomes.ie",
+    "features": [
+      "garden",
+      "parking"
+    ],
+    "status": "available",
+    "dateListed": "2026-01-03",
+    "imageFile": "1.jpg"
+  },
+  {
+    "title": "3-bed bungalow on Talbot Street",
+    "propertyType": "bungalow",
+    "listingType": "sale",
+    "price": 273950,
+    "bedrooms": 3,
+    "bathrooms": 1,
+    "routingKey": "D01",
+    "street": "Talbot Street",
+    "eircode": "D01 7B5D",
+    "agentEmail": "cian.murphy@dublinhomes.ie",
+    "features": [
+      "parking",
+      "garage"
+    ],
+    "status": "available",
+    "dateListed": "2026-02-04",
+    "imageFile": "2.jpg"
+  },
+  {
+    "title": "3-bed duplex on Amiens Street",
+    "propertyType": "duplex",
+    "listingType": "sale",
+    "price": 350000,
+    "bedrooms": 3,
+    "bathrooms": 1,
+    "routingKey": "D01",
+    "street": "Amiens Street",
+    "eircode": "D01 5C1G",
+    "agentEmail": "aoife.kelly@dublinhomes.ie",
+    "features": [
+      "garage",
+      "alarm"
+    ],
+    "status": "available",
+    "dateListed": "2026-03-05",
+    "imageFile": "3.jpg"
+  },
+  {
+    "title": "4-bed house on Mayor Street",
+    "propertyType": "house",
+    "listingType": "sale",
+    "price": 385100,
+    "bedrooms": 4,
+    "bathrooms": 3,
+    "routingKey": "D01",
+    "street": "Mayor Street",
+    "eircode": "D01 3D6K",
+    "agentEmail": "sean.obrien@dublinhomes.ie",
+    "features": [
+      "alarm",
+      "garden"
+    ],
+    "status": "available",
+    "dateListed": "2026-04-06",
+    "imageFile": "4.jpg"
+  },
+  {
+    "title": "3-bed duplex on Grafton Street",
+    "propertyType": "duplex",
+    "listingType": "sale",
+    "price": 350000,
+    "bedrooms": 3,
+    "bathrooms": 1,
+    "routingKey": "D02",
+    "street": "Grafton Street",
+    "eircode": "D02 1E2N",
+    "agentEmail": "niamh.walsh@dublinhomes.ie",
+    "features": [
+      "garden",
+      "parking"
+    ],
+    "status": "available",
+    "dateListed": "2026-05-07",
+    "imageFile": "5.jpg"
+  },
+  {
+    "title": "4-bed house on Dawson Street",
+    "propertyType": "house",
+    "listingType": "sale",
+    "price": 415000,
+    "bedrooms": 4,
+    "bathrooms": 3,
+    "routingKey": "D02",
+    "street": "Dawson Street",
+    "eircode": "D02 8F7R",
+    "agentEmail": "siobhan.byrne@dublinhomes.ie",
+    "features": [
+      "parking",
+      "garage"
+    ],
+    "status": "available",
+    "dateListed": "2026-06-08",
+    "imageFile": "6.jpg"
+  },
+  {
+    "title": "5-bed house on Kildare Street",
+    "propertyType": "house",
+    "listingType": "sale",
+    "price": 545000,
+    "bedrooms": 5,
+    "bathrooms": 2,
+    "routingKey": "D02",
+    "street": "Kildare Street",
+    "eircode": "D02 6G3U",
+    "agentEmail": "cian.murphy@dublinhomes.ie",
+    "features": [
+      "garage",
+      "alarm"
+    ],
+    "status": "available",
+    "dateListed": "2026-01-09",
+    "imageFile": "7.jpg"
+  },
+  {
+    "title": "5-bed house on St Stephen's Green",
+    "propertyType": "house",
+    "listingType": "sale",
+    "price": 545000,
+    "bedrooms": 5,
+    "bathrooms": 2,
+    "routingKey": "D02",
+    "street": "St Stephen's Green",
+    "eircode": "D02 4H8X",
+    "agentEmail": "aoife.kelly@dublinhomes.ie",
+    "features": [
+      "alarm",
+      "garden"
+    ],
+    "status": "available",
+    "dateListed": "2026-02-10",
+    "imageFile": "8.jpg"
+  },
+  {
+    "title": "4-bed house on Vernon Avenue",
+    "propertyType": "house",
+    "listingType": "sale",
+    "price": 690000,
+    "bedrooms": 4,
+    "bathrooms": 5,
+    "routingKey": "D03",
+    "street": "Vernon Avenue",
+    "eircode": "D03 2J4A",
+    "agentEmail": "sean.obrien@dublinhomes.ie",
+    "features": [
+      "garden",
+      "parking"
+    ],
+    "status": "available",
+    "dateListed": "2026-03-11",
+    "imageFile": "9.jpg"
+  },
+  {
+    "title": "3-bed bungalow on Clontarf Road",
+    "propertyType": "bungalow",
+    "listingType": "sale",
+    "price": 1350000,
+    "bedrooms": 3,
+    "bathrooms": 2,
+    "routingKey": "D03",
+    "street": "Clontarf Road",
+    "eircode": "D03 0K0D",
+    "agentEmail": "niamh.walsh@dublinhomes.ie",
+    "features": [
+      "parking",
+      "garage"
+    ],
+    "status": "available",
+    "dateListed": "2026-04-12",
+    "imageFile": "10.jpg"
+  },
+  {
+    "title": "5-bed house on Castle Avenue",
+    "propertyType": "house",
+    "listingType": "sale",
+    "price": 1499000,
+    "bedrooms": 5,
+    "bathrooms": 5,
+    "routingKey": "D03",
+    "street": "Castle Avenue",
+    "eircode": "D03 7L5G",
+    "agentEmail": "siobhan.byrne@dublinhomes.ie",
+    "features": [
+      "garage",
+      "alarm"
+    ],
+    "status": "available",
+    "dateListed": "2026-05-13",
+    "imageFile": "11.jpg"
+  },
+  {
+    "title": "2-bed apartment on Merrion Road",
+    "propertyType": "apartment",
+    "listingType": "lease",
+    "price": 5950,
+    "bedrooms": 2,
+    "bathrooms": 2,
+    "routingKey": "D04",
+    "street": "Merrion Road",
+    "eircode": "D04 5M1K",
+    "agentEmail": "cian.murphy@dublinhomes.ie",
+    "features": [
+      "balcony",
+      "lift"
+    ],
+    "status": "available",
+    "dateListed": "2026-06-14",
+    "imageFile": "12.jpg"
+  },
+  {
+    "title": "3-bed duplex on Northumberland Road",
+    "propertyType": "duplex",
+    "listingType": "sale",
+    "price": 995000,
+    "bedrooms": 3,
+    "bathrooms": 2,
+    "routingKey": "D04",
+    "street": "Northumberland Road",
+    "eircode": "D04 3N6N",
+    "agentEmail": "aoife.kelly@dublinhomes.ie",
+    "features": [
+      "garden",
+      "parking"
+    ],
+    "status": "available",
+    "dateListed": "2026-01-15",
+    "imageFile": "13.jpg"
+  },
+  {
+    "title": "5-bed house on Morehampton Road",
+    "propertyType": "house",
+    "listingType": "sale",
+    "price": 1499000,
+    "bedrooms": 5,
+    "bathrooms": 5,
+    "routingKey": "D04",
+    "street": "Morehampton Road",
+    "eircode": "D04 1P2R",
+    "agentEmail": "sean.obrien@dublinhomes.ie",
+    "features": [
+      "parking",
+      "garage"
+    ],
+    "status": "available",
+    "dateListed": "2026-02-16",
+    "imageFile": "15.jpg"
+  },
+  {
+    "title": "3-bed duplex on Howth Road",
+    "propertyType": "duplex",
+    "listingType": "sale",
+    "price": 1550000,
+    "bedrooms": 3,
+    "bathrooms": 3,
+    "routingKey": "D05",
+    "street": "Howth Road",
+    "eircode": "D05 8Q7U",
+    "agentEmail": "niamh.walsh@dublinhomes.ie",
+    "features": [
+      "garage",
+      "alarm"
+    ],
+    "status": "available",
+    "dateListed": "2026-03-17",
+    "imageFile": "16.jpg"
+  },
+  {
+    "title": "8-bed house on Kilbarrack Road",
+    "propertyType": "house",
+    "listingType": "sale",
+    "price": 1850000,
+    "bedrooms": 8,
+    "bathrooms": 3,
+    "routingKey": "D05",
+    "street": "Kilbarrack Road",
+    "eircode": "D05 6R3X",
+    "agentEmail": "siobhan.byrne@dublinhomes.ie",
+    "features": [
+      "alarm",
+      "garden"
+    ],
+    "status": "available",
+    "dateListed": "2026-04-18",
+    "imageFile": "17.jpg"
+  },
+  {
+    "title": "4-bed house on Watermill Road",
+    "propertyType": "house",
+    "listingType": "sale",
+    "price": 1995000,
+    "bedrooms": 4,
+    "bathrooms": 1,
+    "routingKey": "D05",
+    "street": "Watermill Road",
+    "eircode": "D05 4S8A",
+    "agentEmail": "cian.murphy@dublinhomes.ie",
+    "features": [
+      "garden",
+      "parking"
+    ],
+    "status": "available",
+    "dateListed": "2026-05-19",
+    "imageFile": "18.jpg"
+  },
+  {
+    "title": "4-bed house on Rathmines Road",
+    "propertyType": "house",
+    "listingType": "sale",
+    "price": 249950,
+    "bedrooms": 4,
+    "bathrooms": 2,
+    "routingKey": "D06",
+    "street": "Rathmines Road",
+    "eircode": "D06 2T4D",
+    "agentEmail": "aoife.kelly@dublinhomes.ie",
+    "features": [
+      "parking",
+      "garage"
+    ],
+    "status": "available",
+    "dateListed": "2026-06-20",
+    "imageFile": "19.jpg"
+  },
+  {
+    "title": "4-bed house on Ranelagh Road",
+    "propertyType": "house",
+    "listingType": "sale",
+    "price": 205000,
+    "bedrooms": 4,
+    "bathrooms": 2,
+    "routingKey": "D06",
+    "street": "Ranelagh Road",
+    "eircode": "D06 0U0G",
+    "agentEmail": "sean.obrien@dublinhomes.ie",
+    "features": [
+      "garage",
+      "alarm"
+    ],
+    "status": "available",
+    "dateListed": "2026-01-21",
+    "imageFile": "20.jpg"
+  },
+  {
+    "title": "5-bed house on Rathgar Road",
+    "propertyType": "house",
+    "listingType": "sale",
+    "price": 249000,
+    "bedrooms": 5,
+    "bathrooms": 3,
+    "routingKey": "D06",
+    "street": "Rathgar Road",
+    "eircode": "D06 7V5K",
+    "agentEmail": "niamh.walsh@dublinhomes.ie",
+    "features": [
+      "alarm",
+      "garden"
+    ],
+    "status": "available",
+    "dateListed": "2026-02-22",
+    "imageFile": "21.jpg"
+  },
+  {
+    "title": "3-bed duplex on Terenure Road",
+    "propertyType": "duplex",
+    "listingType": "lease",
+    "price": 780,
+    "bedrooms": 3,
+    "bathrooms": 2,
+    "routingKey": "D6W",
+    "street": "Terenure Road",
+    "eircode": "D6W 5W1N",
+    "agentEmail": "siobhan.byrne@dublinhomes.ie",
+    "features": [
+      "garden",
+      "parking"
+    ],
+    "status": "available",
+    "dateListed": "2026-03-23",
+    "imageFile": "22.jpg"
+  },
+  {
+    "title": "3-bed bungalow on Fortfield Road",
+    "propertyType": "bungalow",
+    "listingType": "lease",
+    "price": 915,
+    "bedrooms": 3,
+    "bathrooms": 2,
+    "routingKey": "D6W",
+    "street": "Fortfield Road",
+    "eircode": "D6W 3X6R",
+    "agentEmail": "cian.murphy@dublinhomes.ie",
+    "features": [
+      "parking",
+      "garage"
+    ],
+    "status": "available",
+    "dateListed": "2026-04-24",
+    "imageFile": "23.jpg"
+  },
+  {
+    "title": "3-bed duplex on Phibsborough Road",
+    "propertyType": "duplex",
+    "listingType": "sale",
+    "price": 229000,
+    "bedrooms": 3,
+    "bathrooms": 2,
+    "routingKey": "D07",
+    "street": "Phibsborough Road",
+    "eircode": "D07 1Y2U",
+    "agentEmail": "aoife.kelly@dublinhomes.ie",
+    "features": [
+      "garage",
+      "alarm"
+    ],
+    "status": "available",
+    "dateListed": "2026-05-25",
+    "imageFile": "24.jpg"
+  },
+  {
+    "title": "2-bed apartment on Cabra Road",
+    "propertyType": "apartment",
+    "listingType": "lease",
+    "price": 960,
+    "bedrooms": 2,
+    "bathrooms": 1,
+    "routingKey": "D07",
+    "street": "Cabra Road",
+    "eircode": "D07 8Z7X",
+    "agentEmail": "sean.obrien@dublinhomes.ie",
+    "features": [
+      "balcony",
+      "lift"
+    ],
+    "status": "available",
+    "dateListed": "2026-06-26",
+    "imageFile": "25.jpg"
+  },
+  {
+    "title": "3-bed duplex on North Circular Road",
+    "propertyType": "duplex",
+    "listingType": "sale",
+    "price": 235000,
+    "bedrooms": 3,
+    "bathrooms": 2,
+    "routingKey": "D07",
+    "street": "North Circular Road",
+    "eircode": "D07 6A3A",
+    "agentEmail": "niamh.walsh@dublinhomes.ie",
+    "features": [
+      "garden",
+      "parking"
+    ],
+    "status": "available",
+    "dateListed": "2026-01-27",
+    "imageFile": "26.jpg"
+  },
+  {
+    "title": "3-bed bungalow on Thomas Street",
+    "propertyType": "bungalow",
+    "listingType": "lease",
+    "price": 960,
+    "bedrooms": 3,
+    "bathrooms": 2,
+    "routingKey": "D08",
+    "street": "Thomas Street",
+    "eircode": "D08 4B8D",
+    "agentEmail": "siobhan.byrne@dublinhomes.ie",
+    "features": [
+      "parking",
+      "garage"
+    ],
+    "status": "available",
+    "dateListed": "2026-02-03",
+    "imageFile": "27.jpg"
+  },
+  {
+    "title": "4-bed house on Meath Street",
+    "propertyType": "house",
+    "listingType": "sale",
+    "price": 240000,
+    "bedrooms": 4,
+    "bathrooms": 3,
+    "routingKey": "D08",
+    "street": "Meath Street",
+    "eircode": "D08 2C4G",
+    "agentEmail": "cian.murphy@dublinhomes.ie",
+    "features": [
+      "garage",
+      "alarm"
+    ],
+    "status": "available",
+    "dateListed": "2026-03-04",
+    "imageFile": "28.jpg"
+  },
+  {
+    "title": "3-bed bungalow on Cork Street",
+    "propertyType": "bungalow",
+    "listingType": "sale",
+    "price": 239990,
+    "bedrooms": 3,
+    "bathrooms": 2,
+    "routingKey": "D08",
+    "street": "Cork Street",
+    "eircode": "D08 0D0K",
+    "agentEmail": "aoife.kelly@dublinhomes.ie",
+    "features": [
+      "alarm",
+      "garden"
+    ],
+    "status": "available",
+    "dateListed": "2026-04-05",
+    "imageFile": "29.jpg"
+  },
+  {
+    "title": "3-bed duplex on Griffith Avenue",
+    "propertyType": "duplex",
+    "listingType": "lease",
+    "price": 875,
+    "bedrooms": 3,
+    "bathrooms": 2,
+    "routingKey": "D09",
+    "street": "Griffith Avenue",
+    "eircode": "D09 7E5N",
+    "agentEmail": "sean.obrien@dublinhomes.ie",
+    "features": [
+      "garden",
+      "parking"
+    ],
+    "status": "available",
+    "dateListed": "2026-05-06",
+    "imageFile": "30.jpg"
+  }
+]
