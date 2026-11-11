@@ -1,7 +1,7 @@
 [
-  { "name": "Siobhan Byrne", "phone": "0851234567", "email": "siobhan.byrne@dublinhomes.ie" },
-  { "name": "Cian Murphy", "phone": "0861234567", "email": "cian.murphy@dublinhomes.ie" },
-  { "name": "Aoife Kelly", "phone": "0871234567", "email": "aoife.kelly@dublinhomes.ie" },
-  { "name": "Sean O'Brien", "phone": "0881234567", "email": "sean.obrien@dublinhomes.ie" },
-  { "name": "Niamh Walsh", "phone": "0891234567", "email": "niamh.walsh@dublinhomes.ie" }
+  { "name": "Siobhan Byrne", "phone": "0851234567", "email": "siobhan.byrne@dublinhomes.ie", "signingPassword": "Siobhan-Stamp-2026" },
+  { "name": "Cian Murphy", "phone": "0861234567", "email": "cian.murphy@dublinhomes.ie", "signingPassword": "Cian-Stamp-2026" },
+  { "name": "Aoife Kelly", "phone": "0871234567", "email": "aoife.kelly@dublinhomes.ie", "signingPassword": "Aoife-Stamp-2026" },
+  { "name": "Sean O'Brien", "phone": "0881234567", "email": "sean.obrien@dublinhomes.ie", "signingPassword": "Sean-Stamp-2026" },
+  { "name": "Niamh Walsh", "phone": "0891234567", "email": "niamh.walsh@dublinhomes.ie", "signingPassword": "Niamh-Stamp-2026" }
 ]

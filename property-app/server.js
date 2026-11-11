@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 const { DB_PATH} = require('./config');
+const signing = require('./signing');
 console.log("Config loaded");
 console.log("  DB_PATH:", DB_PATH);
 
@@ -18,6 +19,10 @@ console.log("  DB_PATH:", DB_PATH);
 
 
 const db = new Database(DB_PATH);
+
+// Adds the signing columns (agent keys, listing signatures) if this database was created
+// before the signing feature existed. It only adds what is missing, existing data is untouched.
+signing.ensureSchema(db);
 
 // I need this to serve index.html, add.html, analytics.html and their JS/CSS.
 // I resolve the request against the public folder and then check the result is still
@@ -153,6 +158,42 @@ function buildImageUrl(row) {
     return row.image_url || "/assets/no-image.jpg";
 }
 
+// Unlocks an agent's private signing key with the password they typed in. I return an
+// { status, error } object for the expected failures (no key, no password, wrong password)
+// so each route can send it straight back, instead of every route repeating these checks.
+// The password is only ever used here, in memory, to unlock the key - it is never stored
+// and never written to the console.
+function unlockAgentKey(agentId, password) {
+    const agent = db.prepare("SELECT id, name, enc_private_key FROM agents WHERE id = ?").get(agentId);
+    if (!agent) {
+        return { status: 400, error: "Agent not found." };
+    }
+    if (!agent.enc_private_key) {
+        return { status: 400, error: `${agent.name} has no signing key yet. Run "npm run setup-signing" for the starter agents, or add the agent again with a signing password.` };
+    }
+    if (typeof password !== "string" || password === "") {
+        return { status: 400, error: `Enter ${agent.name}'s signing password to stamp this listing.` };
+    }
+    try {
+        return { privateKey: signing.unlockPrivateKey(agent.enc_private_key, password) };
+    } catch (err) {
+        if (err.code === "BAD_PASSWORD") {
+            return { status: 403, error: `Wrong signing password for ${agent.name}. Nothing was saved.` };
+        }
+        throw err;
+    }
+}
+
+// What the client needs to draw the badge: the verdict, who stamped it and when, and a short
+// fingerprint of the public key the stamp was checked against.
+function buildVerification(row, publicKeyPem) {
+    return {
+        status: signing.verifyListing(row, publicKeyPem),
+        signedAt: row.signed_at || null,
+        keyFingerprint: signing.fingerprint(publicKeyPem)
+    };
+}
+
 
 const server = http.createServer(async (req, res) => {
     const parsed = new URL(req.url, `http://${req.headers.host}`);
@@ -192,7 +233,14 @@ const server = http.createServer(async (req, res) => {
     // These feeds the agent dropdown on the add page.
     if (req.method === "GET" && parsed.pathname === "/api/agents") {
         try {
-            const agents = db.prepare("SELECT id, name, phone, email FROM agents ORDER BY name").all();
+            // The public key itself is not needed by the dropdowns, so I only send whether the
+            // agent has one and its short fingerprint. The encrypted private key never leaves the server.
+            const agents = db.prepare("SELECT id, name, phone, email, public_key FROM agents ORDER BY name").all()
+                .map(({ public_key, ...agent }) => ({
+                    ...agent,
+                    has_signing_key: !!public_key,
+                    key_fingerprint: signing.fingerprint(public_key)
+                }));
             res.writeHead(200, { "Content-Type": "application/json" });
             return res.end(JSON.stringify(agents));
         } catch (err) {
@@ -224,6 +272,10 @@ const server = http.createServer(async (req, res) => {
                 if (!email || !EMAIL_PATTERN.test(email)) {
                     problems.push("email");
                 }
+                // Every agent needs a signing password, because it is what locks their private key.
+                if (!signing.isValidSigningPassword(data.signingPassword)) {
+                    problems.push(`signing password (at least ${signing.MIN_PASSWORD_LENGTH} characters)`);
+                }
                 if (problems.length > 0) {
                     res.writeHead(400, { "Content-Type": "application/json" });
                     return res.end(JSON.stringify({
@@ -244,11 +296,19 @@ const server = http.createServer(async (req, res) => {
                     return res.end(JSON.stringify({ error: "An agent with that phone number or email already exists." }));
                 }
 
-                const result = db.prepare("INSERT INTO agents (name, phone, email) VALUES (?, ?, ?)").run(data.name.trim(), phone, email);
+                // The agent's key pair is made here, at the moment they are created. The private
+                // key goes into the database already encrypted with their signing password, and
+                // the password itself is thrown away as soon as this request finishes.
+                const keys = signing.generateAgentKeys(data.signingPassword);
+                const result = db.prepare("INSERT INTO agents (name, phone, email, public_key, enc_private_key, key_created_at) VALUES (?, ?, ?, ?, ?, ?)")
+                    .run(data.name.trim(), phone, email, keys.publicKeyPem, keys.encPrivateKey, new Date().toISOString());
                 res.writeHead(200, { "Content-Type": "application/json" });
                 return res.end(JSON.stringify({
                     message: "Agent added successfully.",
-                    agent: { id: result.lastInsertRowid, name: data.name.trim(), phone, email }
+                    agent: {
+                        id: result.lastInsertRowid, name: data.name.trim(), phone, email,
+                        has_signing_key: true, key_fingerprint: signing.fingerprint(keys.publicKeyPem)
+                    }
                 }));
             } catch (err) {
                 res.writeHead(500, { "Content-Type": "application/json" });
@@ -262,6 +322,39 @@ const server = http.createServer(async (req, res) => {
 
 
 
+    // This is the "checker anyone can use" part. It hands back everything needed to check a
+    // listing's stamp without trusting my server: the exact text that was signed, the
+    // signature, and the agent's public key. None of that is secret - the public key can only
+    // check stamps, it cannot make them.
+    if (req.method === "GET" && /^\/api\/listings\/\d+\/verify$/.test(parsed.pathname)) {
+        try {
+            const listingId = parsed.pathname.split("/")[3];
+            const row = db.prepare(`
+                SELECT l.*, ag.name AS agent_name, ag.public_key
+                FROM property_listings l
+                JOIN agents ag ON l.agent_id = ag.id
+                WHERE l.id = ?
+            `).get(listingId);
+            if (!row) {
+                res.writeHead(404, { "Content-Type": "application/json" });
+                return res.end(JSON.stringify({ error: "Listing not found" }));
+            }
+            res.writeHead(200, { "Content-Type": "application/json" });
+            return res.end(JSON.stringify({
+                id: row.id,
+                ...buildVerification(row, row.public_key),
+                algorithm: "Ed25519",
+                agentName: row.agent_name,
+                signedData: row.signature ? signing.canonicalPayload(row, row.signed_at) : null,
+                signature: row.signature || null,
+                publicKey: row.public_key || null
+            }));
+        } catch (err) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            return res.end(JSON.stringify({ error: err.message }));
+        }
+    }
+
     // I am creating ajoin across area/street/agent becayse the homepage needs all of that displayed on every card.
     // Filters are built up conditionally so a request with no query params still returns
     // everything.
@@ -271,9 +364,10 @@ const server = http.createServer(async (req, res) => {
                 SELECT
                     l.id, l.title, l.property_type, l.listing_type, l.price, l.bedrooms, l.bathrooms,
                     l.eircode, l.features, l.status, l.date_listed, l.image_url, l.image_data, l.image_type,
-                    a.area_name, l.routing_key,
+                    a.area_name, l.routing_key, l.street_id, l.signature, l.signed_at,
                     s.street_name,
-                    ag.id AS agent_id, ag.name AS agent_name, ag.phone AS agent_phone, ag.email AS agent_email
+                    ag.id AS agent_id, ag.name AS agent_name, ag.phone AS agent_phone, ag.email AS agent_email,
+                    ag.public_key AS agent_public_key
                 FROM property_listings l
                 JOIN dublin_areas a ON l.routing_key = a.routing_key
                 JOIN dublin_streets s ON l.street_id = s.id
@@ -308,9 +402,18 @@ const server = http.createServer(async (req, res) => {
             // features are stored as a JSON string in the column, so I parse it back into a real
             // array here, and I strip the raw image bytes out (replacing them with the data URI
             // from buildImageUrl) so I'm not sending the same image data twice in the response.
+            // Every listing's stamp is re-checked here, on every read, against what is in the
+            // database at this moment - that is what makes a change made behind the website's
+            // back show up straight away. The raw signature and key are left out of this
+            // response (the /verify route above serves them), only the verdict is sent.
             const listings = rows.map(r => {
-                const { image_data, image_type, ...rest } = r;
-                return { ...rest, features: JSON.parse(r.features || "[]"), image_url: buildImageUrl(r) };
+                const { image_data, image_type, signature, signed_at, agent_public_key, ...rest } = r;
+                return {
+                    ...rest,
+                    features: JSON.parse(r.features || "[]"),
+                    image_url: buildImageUrl(r),
+                    verification: buildVerification(r, agent_public_key)
+                };
             });
 
             res.writeHead(200, { "Content-Type": "application/json" });
@@ -344,7 +447,12 @@ const server = http.createServer(async (req, res) => {
             }
             try {
                 const data = JSON.parse(body);
-                console.log("Listing data:", data);
+                // The signing password and the photo bytes are kept out of the console log.
+                console.log("Listing data:", {
+                    ...data,
+                    imageData: data.imageData ? "[omitted]" : undefined,
+                    signingPassword: data.signingPassword ? "[hidden]" : undefined
+                });
 
                 const problems = validateListingData(data);
                 if (problems.length > 0) {
@@ -366,6 +474,15 @@ const server = http.createServer(async (req, res) => {
                     return res.end(JSON.stringify({ error: "Selected street does not belong to the selected area." }));
                 }
 
+                // The agent has to prove it is really them before anything is saved: their
+                // signing password unlocks their private key. A wrong password stops here, so a
+                // listing can never be posted under an agent's name without that agent's stamp.
+                const unlocked = unlockAgentKey(Number(data.agentId), data.signingPassword);
+                if (unlocked.error) {
+                    res.writeHead(unlocked.status, { "Content-Type": "application/json" });
+                    return res.end(JSON.stringify({ error: unlocked.error }));
+                }
+
                 // Decoding the base64 photo back into real bytes here, right before the insert,
                 // so I only do this conversion once validation has already passed.
 
@@ -379,19 +496,27 @@ const server = http.createServer(async (req, res) => {
                     (title, property_type, listing_type, price, bedrooms, bathrooms, routing_key, street_id, eircode, agent_id, features, status, date_listed, image_url, image_data, image_type)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 `);
-                const result = insert.run(
-                    data.title.trim(), data.propertyType, data.listingType, Number(data.price),
-                    Number(data.bedrooms), Number(data.bathrooms), data.routingKey, Number(data.streetId),
-                    data.eircode.trim().toUpperCase(), Number(data.agentId),
-                    JSON.stringify(data.features || []), "available", new Date().toISOString().split("T")[0],
-                    null, imageBuffer, imageType
-                );
+                // The insert and the stamp happen inside one transaction, so a listing is never
+                // left saved-but-unsigned if something fails halfway. The stamp is made from the
+                // row as it was actually stored (it needs the new id), not from the request body.
+                const saveAndSign = db.transaction(() => {
+                    const result = insert.run(
+                        data.title.trim(), data.propertyType, data.listingType, Number(data.price),
+                        Number(data.bedrooms), Number(data.bathrooms), data.routingKey, Number(data.streetId),
+                        data.eircode.trim().toUpperCase(), Number(data.agentId),
+                        JSON.stringify(data.features || []), "available", new Date().toISOString().split("T")[0],
+                        null, imageBuffer, imageType
+                    );
+                    signing.signListing(db, result.lastInsertRowid, unlocked.privateKey);
+                    return result.lastInsertRowid;
+                });
+                const newListingId = saveAndSign();
 
-                console.log("Listing saved successfully, id:", result.lastInsertRowid);
+                console.log("Listing saved and signed successfully, id:", newListingId);
                 res.writeHead(200, { "Content-Type": "application/json" });
                 return res.end(JSON.stringify({
-                    message: "Listing added successfully.",
-                    id: result.lastInsertRowid
+                    message: "Listing added and signed successfully.",
+                    id: newListingId
                 }));
             } catch (err) {
                 console.error("ERROR:", err.message);
@@ -413,7 +538,11 @@ const server = http.createServer(async (req, res) => {
         req.on("end", () => {
             try {
                 const data = JSON.parse(body);
-                console.log("Update data:", { ...data, imageData: data.imageData ? "[omitted]" : undefined });
+                console.log("Update data:", {
+                    ...data,
+                    imageData: data.imageData ? "[omitted]" : undefined,
+                    signingPassword: data.signingPassword ? "[hidden]" : undefined
+                });
 
                 // Status is regulated by listing_type - "sold" only makes sense for a sale,
                 // "leased" only for a lease - so I need to know what this listing already is
@@ -422,11 +551,36 @@ const server = http.createServer(async (req, res) => {
                 // check too, rather than only discovering a bad ID after building the update.
 
 
-                const currentListing = db.prepare("SELECT listing_type FROM property_listings WHERE id = ?").get(listingId);
+                const currentListing = db.prepare(`
+                    SELECT l.*, ag.public_key
+                    FROM property_listings l
+                    JOIN agents ag ON l.agent_id = ag.id
+                    WHERE l.id = ?
+                `).get(listingId);
 
                 if (!currentListing) {
                     res.writeHead(404, { "Content-Type": "application/json" });
                     return res.end(JSON.stringify({ error: "Listing not found" }));
+                }
+
+                // Only the agent who owns the listing can change it, because the change has to
+                // be re-stamped with that agent's private key, and only their password unlocks it.
+                const unlocked = unlockAgentKey(currentListing.agent_id, data.signingPassword);
+                if (unlocked.error) {
+                    res.writeHead(unlocked.status, { "Content-Type": "application/json" });
+                    return res.end(JSON.stringify({ error: unlocked.error }));
+                }
+
+                // If the listing has already been tampered with, re-stamping it now would put the
+                // agent's genuine stamp on values they never approved. So I stop and make the
+                // agent look at it first - the client asks them to confirm, then sends the
+                // request again with acknowledgeTampered set.
+                if (signing.verifyListing(currentListing, currentListing.public_key) === "tampered" && data.acknowledgeTampered !== true) {
+                    res.writeHead(409, { "Content-Type": "application/json" });
+                    return res.end(JSON.stringify({
+                        tampered: true,
+                        error: "This listing was changed outside the website after it was last signed. Check every value before signing it again."
+                    }));
                 }
 
                 const setClauses = [];
@@ -507,17 +661,27 @@ const server = http.createServer(async (req, res) => {
                     setClauses.push("image_data = NULL, image_type = NULL, image_url = NULL");
                 }
 
-                if (setClauses.length === 0) {
+                // An agent confirming a tampered listing may be re-signing it exactly as it now
+                // stands, so that one case is allowed through with nothing else to update.
+                if (setClauses.length === 0 && data.acknowledgeTampered !== true) {
                     res.writeHead(400, { "Content-Type": "application/json" });
                     return res.end(JSON.stringify({ error: "No valid fields provided to update." }));
                 }
 
-                values.push(listingId);
-                db.prepare(`UPDATE property_listings SET ${setClauses.join(", ")} WHERE id = ?`).run(...values);
+                // The update and the new stamp go in one transaction, so the listing can never
+                // end up changed but still carrying the old stamp (which would look tampered).
+                const updateAndSign = db.transaction(() => {
+                    if (setClauses.length > 0) {
+                        values.push(listingId);
+                        db.prepare(`UPDATE property_listings SET ${setClauses.join(", ")} WHERE id = ?`).run(...values);
+                    }
+                    signing.signListing(db, listingId, unlocked.privateKey);
+                });
+                updateAndSign();
 
-                console.log("Listing updated successfully");
+                console.log("Listing updated and re-signed successfully");
                 res.writeHead(200, { "Content-Type": "application/json" });
-                return res.end(JSON.stringify({ message: "Listing updated successfully" }));
+                return res.end(JSON.stringify({ message: "Listing updated and re-signed successfully" }));
 
 
             } catch (err) {

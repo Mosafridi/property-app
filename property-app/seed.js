@@ -7,6 +7,7 @@ const path = require('path');
 const Database = require('better-sqlite3');
 const xml2js = require('xml2js');
 const { DB_PATH, AREAS_XML_PATH, AGENTS_SEED_PATH, LISTINGS_SEED_PATH, IMAGES_DIR } = require('./config');
+const { setupSigning } = require('./setup-signing');
 
 console.log("Starting database seed...");
 
@@ -182,6 +183,9 @@ async function runSeed() {
     await seedAreasAndStreets();
     seedAgents();
     seedListings();
+    // The starter data goes in unsigned, so this gives each starter agent their key pair and
+    // stamps the starter listings - otherwise every card would show as "Unsigned".
+    setupSigning(db);
     console.log("Database seed complete");
     db.close();
 }

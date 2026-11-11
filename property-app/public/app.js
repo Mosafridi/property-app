@@ -35,6 +35,22 @@ const STATUS_LABELS = {
     "sold": "Sold", "withdrawn": "Withdrawn"
 };
 
+// The three verdicts the server can give for a listing's digital signature (see signing.js).
+// The server does the actual checking every time listings are loaded, this only decides how
+// each verdict is shown.
+const VERIFICATION_BADGES = {
+    verified: { cssClass: "verified", label: "✔ Verified" },
+    tampered: { cssClass: "tampered", label: "⚠ Tampered" },
+    unsigned: { cssClass: "unsigned", label: "Unsigned" }
+};
+function verificationBadge(listing) {
+    const badge = VERIFICATION_BADGES[listing.verification?.status] || VERIFICATION_BADGES.unsigned;
+    return `<div class="verify-badge ${badge.cssClass}">${badge.label}</div>`;
+}
+function formatSignedAt(isoString) {
+    return isoString ? new Date(isoString).toLocaleString() : "an unknown date";
+}
+
 // This is the guiding text: as  a user types, it will value against the same rule the
 // server will enforce and turn the field green or red immediately, instead of them finding out only after a failed submit. 
 // It's still just a UX layer - server.js runs its own checks independently either way, since a client-side check can always be skipped.
@@ -45,7 +61,8 @@ const FIELD_GUIDES = {
     bedrooms: { test: v => !isNaN(v) && Number(v) > 0, hint: "Must be a positive whole number" },
     bathrooms: { test: v => !isNaN(v) && Number(v) > 0, hint: "Must be a positive whole number" },
     phone: { test: v => /^(\+353|0)(1\d{7}|8[3-9]\d{7})$/.test(v.replace(/[\s-]/g, "")), hint: "Irish mobile (08X XXX XXXX) or Dublin landline (01 XXX XXXX)" },
-    email: { test: v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), hint: "A valid email address, e.g. name@dublinhomes.ie" }
+    email: { test: v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), hint: "A valid email address, e.g. name@dublinhomes.ie" },
+    signingPassword: { test: v => v.length >= 8, hint: "At least 8 characters. This locks the agent's private signing key and cannot be recovered if forgotten." }
 };
 function attachFieldGuide(inputId, hintId, guideKey) {
     const input = document.getElementById(inputId);
@@ -124,7 +141,9 @@ async function addAgent(event) {
     const agentData = {
         name: document.getElementById("agentName").value,
         phone: document.getElementById("agentPhone").value,
-        email: document.getElementById("agentEmail").value
+        email: document.getElementById("agentEmail").value,
+        // Used once by the server to lock this agent's new private key, then discarded.
+        signingPassword: document.getElementById("agentSigningPassword").value
     };
 
     try {
@@ -139,7 +158,7 @@ async function addAgent(event) {
             responseMessage.textContent = `Error: ${data.error}`;
         } else {
             responseMessage.style.color = "#27ae60";
-            responseMessage.textContent = `Agent "${data.agent.name}" added.`;
+            responseMessage.textContent = `Agent "${data.agent.name}" added with their own signing key (fingerprint ${data.agent.key_fingerprint}).`;
             document.getElementById("add-agent-form").reset();
             // Re-pulling the full agent list rather than just appending one option locally,
             // so the dropdown stays a true reflection of what's actually in the database.
@@ -270,7 +289,10 @@ async function addListing(event) {
         agentId: document.getElementById("agentId").value,
         features: features,
         imageData: imageData,
-        imageType: imageType
+        imageType: imageType,
+        // The selected agent's signing password - the server uses it to unlock that agent's
+        // private key and stamp the listing. A wrong password means nothing gets saved.
+        signingPassword: document.getElementById("signingPassword").value
     };
 
 
@@ -286,7 +308,7 @@ async function addListing(event) {
             responseMessage.textContent = `Error: ${data.error}`;
         } else {
             responseMessage.style.color = "#27ae60";
-            responseMessage.textContent = `Success: Listing "${listingData.title}" added!`;
+            responseMessage.textContent = `Success: Listing "${listingData.title}" added and signed!`;
             // I already have the image bytes from the upload itself, so I build the preview
             // straight from those instead of making a second round trip to ask the server for it.
             const previewImageUrl = imageData ? `data:${imageType};base64,${imageData}` : "/assets/no-image.png";
@@ -301,6 +323,7 @@ async function addListing(event) {
                     <div class="listing-card">
                         <img src="${previewImageUrl}" alt="${safeTitle}">
                         <h3>${safeTitle}</h3>
+                        <p style="color:#27ae60;font-weight:bold;">✔ Signed with the agent's key</p>
                         <p><strong>Price:</strong> ${formatPrice(listingData.price, listingData.listingType)}</p>
                         <p><strong>Bedrooms:</strong> ${listingData.bedrooms} | <strong>Bathrooms:</strong> ${listingData.bathrooms}</p>
                     </div>
@@ -376,9 +399,10 @@ function applyFilters() {
 
     
     container.innerHTML = filtered.map(l => `
-        <div class="listing-card" onclick="openListingModal(${l.id})">
+        <div class="listing-card${l.verification?.status === "tampered" ? " tampered" : ""}" onclick="openListingModal(${l.id})">
             <div class="listing-card-inner">
                 <div class="status-badge">${escapeHtml(l.status)}</div>
+                ${verificationBadge(l)}
                 <img src="${l.image_url || '/assets/no-image.png'}" alt="${escapeHtml(l.title)}">
                 <div class="listing-overlay"></div>
             </div>
@@ -405,6 +429,23 @@ function openListingModal(id) {
     document.getElementById("modalEircode").textContent = listing.eircode;
     document.getElementById("modalFeatures").textContent = listing.features.length > 0 ? listing.features.join(", ") : "None listed";
     document.getElementById("modalAgent").textContent = `${listing.agent_name} | ${listing.agent_phone} | ${listing.agent_email}`;
+
+    // The signature verdict for this listing, spelled out in full. textContent is used for the
+    // message since it includes the agent's name, which is user-entered text.
+    const verification = listing.verification || { status: "unsigned" };
+    const verificationBox = document.getElementById("modalVerification");
+    const verificationText = document.getElementById("modalVerificationText");
+    verificationBox.className = `info-field verification-box ${verification.status}`;
+    if (verification.status === "verified") {
+        verificationText.textContent = `✔ Verified. Signed by ${listing.agent_name} on ${formatSignedAt(verification.signedAt)}, and nothing has been changed since. Key fingerprint: ${verification.keyFingerprint}`;
+    } else if (verification.status === "tampered") {
+        verificationText.textContent = `⚠ Warning: this listing was changed after ${listing.agent_name} signed it on ${formatSignedAt(verification.signedAt)}. The details shown here are not what the agent approved.`;
+    } else {
+        verificationText.textContent = "This listing has not been signed by its agent.";
+    }
+    document.getElementById("modalProofLink").href = `/api/listings/${listing.id}/verify`;
+    document.getElementById("modalSigningPasswordLabel").textContent = `Signing password for ${listing.agent_name} (needed to save changes)`;
+    document.getElementById("modalSigningPassword").value = "";
 
     document.getElementById("modalPrice").value = listing.price;
     document.getElementById("modalBedrooms").value = listing.bedrooms;
@@ -475,13 +516,35 @@ async function updateListing() {
         payload.imageType = imageFile.type;
     }
 
+    // Any change has to be re-stamped by the listing's own agent, so their signing password
+    // goes along with the update. Without it the server refuses to save anything.
+    const signingPassword = document.getElementById("modalSigningPassword").value;
+    if (!signingPassword) {
+        alert("Enter the agent's signing password to save and re-sign this listing.");
+        return;
+    }
+    payload.signingPassword = signingPassword;
+
+    const sendUpdate = () => fetch(`/api/listings/${currentListingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
+
     try {
-        const response = await fetch(`/api/listings/${currentListingId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-        });
-        const data = await response.json();
+        let response = await sendUpdate();
+        let data = await response.json();
+
+        // The server refuses to re-sign a listing that has been tampered with until the agent
+        // has been warned, so a genuine stamp never lands on values they did not check.
+        if (response.status === 409 && data.tampered) {
+            const goAhead = confirm(`${data.error}\n\nSign the listing as it is shown now, with your changes?`);
+            if (!goAhead) return;
+            payload.acknowledgeTampered = true;
+            response = await sendUpdate();
+            data = await response.json();
+        }
+
         if (response.ok) {
             closeListingModal();
             loadListings();
@@ -531,4 +594,5 @@ if (window.location.pathname.includes("add.html")) {
     attachFieldGuide("eircode", "eircodeHint", "eircode");
     attachFieldGuide("agentPhone", "agentPhoneHint", "phone");
     attachFieldGuide("agentEmail", "agentEmailHint", "email");
+    attachFieldGuide("agentSigningPassword", "agentSigningPasswordHint", "signingPassword");
 }

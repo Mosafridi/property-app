@@ -55,6 +55,12 @@
                 <input id="agentEmail" type="email" placeholder="e.g. fiona.kavanagh@dublinhomes.ie">
                 <small id="agentEmailHint" class="field-hint"></small>
 
+                <!-- Each agent gets their own signing key when they are added. This password
+                     locks the private half of it, so only this agent can stamp listings. -->
+                <label for="agentSigningPassword">Signing password:</label>
+                <input id="agentSigningPassword" type="password" minlength="8" autocomplete="new-password" required>
+                <small id="agentSigningPasswordHint" class="field-hint"></small>
+
                 <button type="submit">Add Agent</button>
             </form>
             <p id="agentResponseMessage"></p>
@@ -128,6 +134,12 @@
             <input id="imageFile" type="file" accept="image/jpeg,image/png" onchange="previewImage()">
             <img id="imagePreview" style="display:none;width:100%;max-height:200px;object-fit:cover;border-radius:4px;margin-bottom:10px;">
             <p id="imageError" style="color:#c0392b;font-size:13px;"></p>
+
+            <!-- The listing is stamped with the selected agent's private key, and that key can
+                 only be unlocked with that agent's own signing password. -->
+            <label for="signingPassword">Agent's signing password:</label>
+            <input id="signingPassword" type="password" autocomplete="off" required>
+            <small class="field-hint">The selected agent's password. It unlocks their key to sign this listing and is not stored.</small>
 
             <button type="submit">Add Listing</button>
         </form>

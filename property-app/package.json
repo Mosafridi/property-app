@@ -5,6 +5,8 @@
   "main": "server.js",
   "scripts": {
     "seed": "node seed.js",
+    "setup-signing": "node setup-signing.js",
+    "tamper-demo": "node tamper-demo.js",
     "start": "node server.js"
   },
   "dependencies": {
