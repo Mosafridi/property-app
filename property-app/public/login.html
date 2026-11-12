@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Agent Login</title>
+        <style>
+            body{font-family:Arial,sans-serif;margin:0;padding:20px;background:#f4f4f4;}
+            nav{background:#2c3e50;padding:10px;margin-bottom:20px;display:flex;align-items:center;flex-wrap:wrap;}
+            nav a{color:#fff;text-decoration:none;margin-right:15px;}
+            nav a:hover{text-decoration:underline;}
+            h1{color:#2c3e50;}
+            form{background:#fff;padding:20px;border-radius:8px;max-width:400px;box-shadow:0 2px 5px rgba(0,0,0,0.1);}
+            label{display:block;margin-bottom:5px;font-weight:bold;margin-top:12px;}
+            input{width:100%;padding:10px;margin-bottom:5px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box;}
+            button{background:#2c3e50;color:#fff;padding:10px 20px;border:none;border-radius:4px;cursor:pointer;margin-top:15px;}
+            button:hover{background:#1a252f;}
+            button:disabled{opacity:0.6;cursor:wait;}
+            .intro{color:#555;max-width:400px;}
+            #message{margin-top:15px;max-width:400px;font-weight:bold;}
+            .error{color:#c0392b;}
+            .success{color:#27ae60;}
+        </style>
+    </head>
+    <body>
+        <nav>
+            <a href="index.html">Home</a>
+            <a href="add.html">Add Listing</a>
+            <a href="analytics.html">Analytics</a>
+        </nav>
+        <h1>Agent Login</h1>
+        <p class="intro">Agents log in to add, edit or delete their own listings. Visitors don't need an account to browse.</p>
+
+        <form id="loginForm">
+            <label for="email">Email:</label>
+            <input type="email" id="email" placeholder="e.g. siobhan.byrne@dublinhomes.ie" required autocomplete="username">
+
+            <label for="password">Password:</label>
+            <input type="password" id="password" required autocomplete="current-password">
+
+            <button type="submit" id="loginBtn">Log in</button>
+        </form>
+        <p id="message"></p>
+
+        <script>
+            // Member 1 - login page.
+            // The password is sent to the server once, which checks it against the stored
+            // scrypt hash. If it's right, the server sets an HttpOnly session cookie. This page
+            // never sees or stores that cookie - the browser handles it automatically.
+            const form = document.getElementById("loginForm");
+            const message = document.getElementById("message");
+            const button = document.getElementById("loginBtn");
+
+            // Where to go after logging in. I only allow a plain page name like "add.html",
+            // so a crafted link like login.html?next=https://evil.site can't redirect
+            // someone to a fake site after they log in (an "open redirect").
+            const requestedNext = new URLSearchParams(window.location.search).get("next") || "";
+            const nextPage = /^[a-z]+\.html$/.test(requestedNext) ? requestedNext : "index.html";
+
+            function showMessage(text, type) {
+                message.textContent = text; // textContent, not innerHTML - XSS safe
+                message.className = type;
+            }
+
+            form.addEventListener("submit", async (event) => {
+                event.preventDefault();
+                button.disabled = true;
+                showMessage("Checking...", "");
+
+                try {
+                    const response = await fetch("/api/login", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            email: document.getElementById("email").value.trim(),
+                            password: document.getElementById("password").value
+                        })
+                    });
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        showMessage(`Welcome, ${result.agent.name}!`, "success");
+                        setTimeout(() => (window.location.href = nextPage), 700);
+                    } else {
+                        showMessage(result.error || "Login failed.", "error");
+                        document.getElementById("password").value = "";
+                    }
+                } catch (err) {
+                    showMessage("Could not reach the server. Is it running?", "error");
+                } finally {
+                    button.disabled = false;
+                }
+            });
+        </script>
+    </body>
+</html>
