@@ -1,6 +1,7 @@
 // I'm keeping config this simple on purpose - unlike the movie app, there's no external API
-// here, everything lives in my own SQLite database, so the app works fully offline and there's
-// no key to leak or manage.
+// here, everything lives in my own SQLite database, so the app works fully offline.
+// Only file paths go in here, never secrets: the key that encrypts viewing requests is kept
+// in the .env file (ENV_PATH below), which git ignores.
 const path = require('path');
 
 module.exports = {
@@ -11,5 +12,6 @@ module.exports = {
     // IMAGES_DIR is where the {imageFile} jpgs referenced in listings-seed.json live -
     // seed.js reads the actual bytes from here at seed time and writes them into the
     // image_data BLOB column, the same way the add-listing upload flow does.
-    IMAGES_DIR: path.join(__dirname, "data", "images")
+    IMAGES_DIR: path.join(__dirname, "data", "images"),
+    ENV_PATH: path.join(__dirname, ".env")
 };

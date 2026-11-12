@@ -43,6 +43,12 @@ const VERIFICATION_BADGES = {
     tampered: { cssClass: "tampered", label: "⚠ Tampered" },
     unsigned: { cssClass: "unsigned", label: "Unsigned" }
 };
+// Has to match VIEWING_OPEN_STATUSES in server.js - a viewing can only be requested while the
+// property can still be seen, so the button is left off sold, leased and withdrawn listings.
+// The server refuses those too, this only keeps the button from being offered.
+const VIEWING_OPEN_STATUSES = ["available", "sale agreed"];
+let viewingListingId = null;
+
 function verificationBadge(listing) {
     const badge = VERIFICATION_BADGES[listing.verification?.status] || VERIFICATION_BADGES.unsigned;
     return `<div class="verify-badge ${badge.cssClass}">${badge.label}</div>`;
@@ -62,6 +68,7 @@ const FIELD_GUIDES = {
     bathrooms: { test: v => !isNaN(v) && Number(v) > 0, hint: "Must be a positive whole number" },
     phone: { test: v => /^(\+353|0)(1\d{7}|8[3-9]\d{7})$/.test(v.replace(/[\s-]/g, "")), hint: "Irish mobile (08X XXX XXXX) or Dublin landline (01 XXX XXXX)" },
     email: { test: v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), hint: "A valid email address, e.g. name@dublinhomes.ie" },
+    buyerPhone: { test: v => /^\+?\d{7,15}$/.test(v.replace(/[\s-]/g, "")), hint: "7 to 15 digits, e.g. 085 123 4567 or +353 85 123 4567" },
     signingPassword: { test: v => v.length >= 8, hint: "At least 8 characters. This locks the agent's private signing key and cannot be recovered if forgotten." }
 };
 function attachFieldGuide(inputId, hintId, guideKey) {
@@ -409,6 +416,7 @@ function applyFilters() {
             <h3>${escapeHtml(l.title)}</h3>
             <p class="price-tag">${formatPrice(l.price, l.listing_type)}</p>
             <p>${l.bedrooms} bed | ${l.bathrooms} bath | ${escapeHtml(l.area_name)}</p>
+            ${VIEWING_OPEN_STATUSES.includes(l.status) ? `<button type="button" class="viewing-btn" onclick="event.stopPropagation(); openViewingModal(${l.id})">Request a viewing</button>` : ""}
         </div>
     `).join("");
 }
@@ -576,6 +584,75 @@ async function confirmDelete() {
     }
 }
 
+// REQUEST A VIEWING
+
+// The button sits inside the listing card, which opens the edit popup when clicked, so the
+// button's onclick stops the click from reaching the card (see applyFilters above).
+function openViewingModal(id) {
+    const listing = allListings.find(l => l.id === id);
+    if (!listing) return;
+    viewingListingId = id;
+    resetViewingForm();
+    document.getElementById("viewingResponse").textContent = "";
+    // textContent, not innerHTML, because the title and agent name are user-entered text.
+    document.getElementById("viewingListingSummary").textContent =
+        `${listing.title} - ${listing.street_name}, ${listing.area_name}`;
+    document.getElementById("viewingPrivacyNote").textContent =
+        `\u{1F512} Your name, phone number and message are encrypted before they are saved. Only ${listing.agent_name}, the agent for this property, can read them after logging in.`;
+    document.getElementById("viewingModal").style.display = "flex";
+}
+
+// Empties the form and also clears the green/red phone hint left over from the last request.
+function resetViewingForm() {
+    document.getElementById("viewing-form").reset();
+    document.getElementById("viewingPhone").classList.remove("field-ok", "field-bad");
+    document.getElementById("viewingPhoneHint").classList.remove("ok", "bad");
+}
+
+function closeViewingModal() {
+    document.getElementById("viewingModal").style.display = "none";
+    viewingListingId = null;
+}
+
+// The form is sent as it was typed - the scrambling happens on the server, where the secret
+// key is. The browser never has the key, so nothing here could unscramble a saved request.
+async function submitViewingRequest(event) {
+    event.preventDefault();
+    if (!viewingListingId) return;
+    const responseMessage = document.getElementById("viewingResponse");
+    const submitBtn = document.getElementById("viewingSubmitBtn");
+    responseMessage.textContent = "";
+    submitBtn.disabled = true;
+
+    const requestData = {
+        name: document.getElementById("viewingName").value,
+        phone: document.getElementById("viewingPhone").value,
+        message: document.getElementById("viewingMessage").value
+    };
+
+    try {
+        const response = await fetch(`/api/listings/${viewingListingId}/viewing-requests`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestData)
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            responseMessage.style.color = "#c0392b";
+            responseMessage.textContent = `Error: ${data.error}`;
+        } else {
+            responseMessage.style.color = "#27ae60";
+            responseMessage.textContent = data.message;
+            resetViewingForm();
+        }
+    } catch (error) {
+        responseMessage.style.color = "#c0392b";
+        responseMessage.textContent = `Error: ${error.message}`;
+    } finally {
+        submitBtn.disabled = false;
+    }
+}
+
 // I decide what to load based on which page is currently open,
 // so this one shared file can drive both index.html and add.html without extra config.
 if (window.location.pathname.includes("index.html") || window.location.pathname === "/") {
@@ -584,6 +661,7 @@ if (window.location.pathname.includes("index.html") || window.location.pathname 
     attachFieldGuide("modalPrice", "modalPriceHint", "price");
     attachFieldGuide("modalBedrooms", "modalBedroomsHint", "bedrooms");
     attachFieldGuide("modalBathrooms", "modalBathroomsHint", "bathrooms");
+    attachFieldGuide("viewingPhone", "viewingPhoneHint", "buyerPhone");
 }
 if (window.location.pathname.includes("add.html")) {
     loadAreasDropdown();

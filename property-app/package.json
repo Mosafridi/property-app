@@ -7,6 +7,8 @@
     "seed": "node seed.js",
     "setup-signing": "node setup-signing.js",
     "tamper-demo": "node tamper-demo.js",
+    "setup-encryption": "node setup-encryption.js",
+    "encryption-demo": "node encryption-demo.js",
     "start": "node server.js"
   },
   "dependencies": {

@@ -1,2 +1,4 @@
 ﻿node_modules/
 tamper-demo-backup.json
+.env
+encryption-demo-backup.json

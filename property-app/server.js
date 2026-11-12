@@ -8,6 +8,8 @@ const path = require('path');
 const { URL } = require('url');
 const { DB_PATH} = require('./config');
 const signing = require('./signing');
+const encryption = require('./encryption');
+const crypto = require('crypto');
 console.log("Config loaded");
 console.log("  DB_PATH:", DB_PATH);
 
@@ -23,6 +25,18 @@ const db = new Database(DB_PATH);
 // Adds the signing columns (agent keys, listing signatures) if this database was created
 // before the signing feature existed. It only adds what is missing, existing data is untouched.
 signing.ensureSchema(db);
+
+// Creates the viewing_requests table if this database does not have it yet.
+encryption.ensureSchema(db);
+
+// The secret key that scrambles viewing requests. It is read once here, from an environment
+// variable or the git-ignored .env file - it is never written in the code, never stored in
+// the database and never printed. Without it the rest of the site still works, but the
+// viewing request form and the inbox stay switched off.
+const viewingKey = encryption.loadKey();
+if (!viewingKey) {
+    console.log('WARNING: no encryption key found. Run "npm run setup-encryption" and restart to switch on viewing requests.');
+}
 
 // I need this to serve index.html, add.html, analytics.html and their JS/CSS.
 // I resolve the request against the public folder and then check the result is still
@@ -192,6 +206,119 @@ function buildVerification(row, publicKeyPem) {
         signedAt: row.signed_at || null,
         keyFingerprint: signing.fingerprint(publicKeyPem)
     };
+}
+
+
+// VIEWING REQUESTS AND THE AGENT INBOX
+
+// A viewing only makes sense while the property can still be seen, so requests are refused
+// for sold, leased and withdrawn listings. app.js uses the same list to hide the button.
+const VIEWING_OPEN_STATUSES = ["available", "sale agreed"];
+
+// A buyer could be calling from anywhere, so this is looser than the Irish-only agent
+// pattern above: 7 to 15 digits with an optional leading +.
+const BUYER_PHONE_PATTERN = /^\+?\d{7,15}$/;
+const MAX_BUYER_NAME_LENGTH = 100;
+const MAX_VIEWING_MESSAGE_LENGTH = 1000;
+
+function sendJson(res, status, payload, extraHeaders = {}) {
+    res.writeHead(status, { "Content-Type": "application/json", ...extraHeaders });
+    return res.end(JSON.stringify(payload));
+}
+
+// Reads a small JSON body. The size cap stops someone sending an endless body to use up
+// memory, and bad JSON comes back as a 400 instead of a server error.
+function readJsonBody(req, maxBytes) {
+    return new Promise((resolve, reject) => {
+        let body = "";
+        let tooLarge = false;
+        req.on("data", chunk => {
+            if (tooLarge) return;
+            body += chunk;
+            if (body.length > maxBytes) {
+                tooLarge = true;
+                body = "";
+            }
+        });
+        req.on("end", () => {
+            if (tooLarge) {
+                return reject(Object.assign(new Error("Request too large."), { status: 413 }));
+            }
+            try {
+                const data = JSON.parse(body);
+                if (data === null || typeof data !== "object") throw new Error("not an object");
+                resolve(data);
+            } catch (err) {
+                reject(Object.assign(new Error("The request was not valid JSON."), { status: 400 }));
+            }
+        });
+        req.on("error", reject);
+    });
+}
+
+// Expected problems (too large, bad JSON) carry their own status. Anything else is logged on
+// the server and the client only gets a general message, so no internal details leak out.
+function sendRequestError(res, err) {
+    if (err.status) return sendJson(res, err.status, { error: err.message });
+    console.error("ERROR:", err.message);
+    return sendJson(res, 500, { error: "Server error" });
+}
+
+// Agent login sessions. An agent proves who they are with the signing password they already
+// have, and the server then hands their browser a long random token in a cookie:
+//   - HttpOnly, so JavaScript on the page cannot read it,
+//   - SameSite=Strict, so another website cannot make the browser send it.
+// The sessions themselves live in memory only, so restarting the server logs everyone out.
+const SESSION_COOKIE = "agent_session";
+const SESSION_MINUTES = 30;
+const sessions = new Map(); // token -> { agentId, expiresAt }
+
+function sessionCookie(token, maxAgeSeconds) {
+    return `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAgeSeconds}`;
+}
+
+function startSession(agentId) {
+    // Clear out sessions that have run out, so the map does not grow forever.
+    for (const [token, session] of sessions) {
+        if (session.expiresAt <= Date.now()) sessions.delete(token);
+    }
+    const token = crypto.randomBytes(32).toString("hex");
+    sessions.set(token, { agentId, expiresAt: Date.now() + SESSION_MINUTES * 60 * 1000 });
+    return token;
+}
+
+function sessionTokenFrom(req) {
+    const cookies = (req.headers.cookie || "").split(";").map(c => c.trim());
+    const match = cookies.find(c => c.startsWith(SESSION_COOKIE + "="));
+    return match ? match.slice(SESSION_COOKIE.length + 1) : null;
+}
+
+// Returns the logged-in agent's session, or null if there is no valid, unexpired one.
+function getSession(req) {
+    const token = sessionTokenFrom(req);
+    const session = token ? sessions.get(token) : null;
+    if (!session) return null;
+    if (session.expiresAt <= Date.now()) {
+        sessions.delete(token);
+        return null;
+    }
+    return session;
+}
+
+// Slows down password guessing on the login form: after 5 wrong passwords in a row for an
+// agent, logins for that agent are refused for 5 minutes.
+const MAX_LOGIN_FAILURES = 5;
+const LOGIN_LOCK_MINUTES = 5;
+const loginFailures = new Map(); // agentId -> { count, lockedUntil }
+
+function recordLoginFailure(agentId) {
+    const entry = loginFailures.get(agentId) || { count: 0, lockedUntil: 0 };
+    entry.count++;
+    if (entry.count >= MAX_LOGIN_FAILURES) {
+        entry.count = 0;
+        entry.lockedUntil = Date.now() + LOGIN_LOCK_MINUTES * 60 * 1000;
+    }
+    loginFailures.set(agentId, entry);
 }
 
 
@@ -716,6 +843,139 @@ const server = http.createServer(async (req, res) => {
             console.error("ERROR:", err.message);
             res.writeHead(500, { "Content-Type": "application/json" });
             return res.end(JSON.stringify({ error: "Server error", details: err.message }));
+        }
+    }
+
+    // "Request a viewing" - open to anyone, no login. The buyer's name, phone number and
+    // message are checked first and then scrambled BEFORE they are saved, so the readable
+    // text only ever exists in memory for the length of this request. It is not written to
+    // the console either.
+    const viewingRoute = parsed.pathname.match(/^\/api\/listings\/(\d+)\/viewing-requests$/);
+    if (req.method === "POST" && viewingRoute) {
+        try {
+            if (!viewingKey) {
+                return sendJson(res, 503, { error: "Viewing requests are switched off because the server has no encryption key yet." });
+            }
+            const data = await readJsonBody(req, 10 * 1024);
+            const name = typeof data.name === "string" ? data.name.trim() : "";
+            const phone = typeof data.phone === "string" ? data.phone.replace(/[\s-]/g, "") : "";
+            const message = typeof data.message === "string" ? data.message.trim() : "";
+
+            const problems = [];
+            if (!name || name.length > MAX_BUYER_NAME_LENGTH) problems.push("name");
+            if (!BUYER_PHONE_PATTERN.test(phone)) problems.push("phone");
+            if (!message || message.length > MAX_VIEWING_MESSAGE_LENGTH) problems.push("message");
+            if (problems.length > 0) {
+                return sendJson(res, 400, { error: `Please check the following field(s): ${problems.join(", ")}.` });
+            }
+
+            const listing = db.prepare("SELECT id, agent_id, status FROM property_listings WHERE id = ?").get(Number(viewingRoute[1]));
+            if (!listing) {
+                return sendJson(res, 404, { error: "Listing not found" });
+            }
+            if (!VIEWING_OPEN_STATUSES.includes(listing.status)) {
+                return sendJson(res, 400, { error: "This property is no longer open for viewings." });
+            }
+
+            // The request goes to whichever agent owns the listing right now. The listing id,
+            // agent id and time are sealed in with the message, so none of them can be changed
+            // in the database later without breaking the seal.
+            const createdAt = new Date().toISOString();
+            const sealed = encryption.encryptRequest(viewingKey, { name, phone, message },
+                { listingId: listing.id, agentId: listing.agent_id, createdAt });
+            db.prepare("INSERT INTO viewing_requests (listing_id, agent_id, created_at, iv, auth_tag, ciphertext) VALUES (?, ?, ?, ?, ?, ?)")
+                .run(listing.id, listing.agent_id, createdAt, sealed.iv, sealed.authTag, sealed.ciphertext);
+
+            console.log("Viewing request saved (encrypted) for listing", listing.id);
+            return sendJson(res, 201, { message: "Your viewing request has been sent to the agent." });
+        } catch (err) {
+            return sendRequestError(res, err);
+        }
+    }
+
+    // Agent login for the inbox. The password is checked by trying to unlock the agent's
+    // private signing key with it - the same proof the listing forms already rely on - so
+    // there is no second password to store. It is used in memory and then thrown away.
+    if (req.method === "POST" && parsed.pathname === "/api/login") {
+        try {
+            const data = await readJsonBody(req, 10 * 1024);
+            const agent = db.prepare("SELECT id, name, enc_private_key FROM agents WHERE id = ?").get(Number(data.agentId));
+
+            const failures = agent ? loginFailures.get(agent.id) : null;
+            if (failures && failures.lockedUntil > Date.now()) {
+                return sendJson(res, 429, { error: "Too many wrong attempts. Try again in a few minutes." });
+            }
+
+            let passwordOk = false;
+            if (agent && agent.enc_private_key && typeof data.signingPassword === "string" && data.signingPassword !== "") {
+                try {
+                    signing.unlockPrivateKey(agent.enc_private_key, data.signingPassword);
+                    passwordOk = true;
+                } catch (err) {
+                    if (err.code !== "BAD_PASSWORD") throw err;
+                }
+            }
+            if (!passwordOk) {
+                if (agent) recordLoginFailure(agent.id);
+                return sendJson(res, 401, { error: "Wrong agent or signing password." });
+            }
+
+            loginFailures.delete(agent.id);
+            const token = startSession(agent.id);
+            console.log("Agent logged in to the inbox, id:", agent.id);
+            return sendJson(res, 200, { message: "Logged in.", agent: { id: agent.id, name: agent.name } },
+                { "Set-Cookie": sessionCookie(token, SESSION_MINUTES * 60) });
+        } catch (err) {
+            return sendRequestError(res, err);
+        }
+    }
+
+    // Logging out forgets the session on the server and tells the browser to drop the cookie.
+    if (req.method === "POST" && parsed.pathname === "/api/logout") {
+        const token = sessionTokenFrom(req);
+        if (token) sessions.delete(token);
+        return sendJson(res, 200, { message: "Logged out." }, { "Set-Cookie": sessionCookie("", 0) });
+    }
+
+    // The agent's inbox. This is the only place viewing requests are ever unscrambled, and
+    // only for the agent whose session cookie came with the request - the agent id comes from
+    // the session, never from anything the browser can choose, so one agent cannot ask for
+    // another agent's messages. A request whose seal does not match is reported as unopened
+    // and none of its content is sent.
+    if (req.method === "GET" && parsed.pathname === "/api/inbox") {
+        try {
+            const session = getSession(req);
+            if (!session) {
+                return sendJson(res, 401, { error: "Log in to read your inbox." });
+            }
+            if (!viewingKey) {
+                return sendJson(res, 503, { error: "The inbox is switched off because the server has no encryption key yet." });
+            }
+
+            const agent = db.prepare("SELECT id, name FROM agents WHERE id = ?").get(session.agentId);
+            const rows = db.prepare(`
+                SELECT vr.*, l.title AS listing_title
+                FROM viewing_requests vr
+                JOIN property_listings l ON l.id = vr.listing_id
+                WHERE vr.agent_id = ?
+                ORDER BY vr.created_at DESC, vr.id DESC
+            `).all(session.agentId);
+
+            const requests = rows.map(row => {
+                const summary = { id: row.id, listingId: row.listing_id, listingTitle: row.listing_title, receivedAt: row.created_at };
+                try {
+                    const details = encryption.decryptRequest(viewingKey, row);
+                    return { ...summary, opened: true, name: String(details.name ?? ""), phone: String(details.phone ?? ""), message: String(details.message ?? "") };
+                } catch (err) {
+                    if (err.code !== "SEAL_BROKEN") throw err;
+                    return { ...summary, opened: false };
+                }
+            });
+
+            // no-store keeps the readable messages out of the browser's cache.
+            return sendJson(res, 200, { agent, requests }, { "Cache-Control": "no-store" });
+        } catch (err) {
+            return sendRequestError(res, err);
         }
     }
 
