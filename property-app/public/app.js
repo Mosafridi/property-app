@@ -69,7 +69,9 @@ const FIELD_GUIDES = {
     phone: { test: v => /^(\+353|0)(1\d{7}|8[3-9]\d{7})$/.test(v.replace(/[\s-]/g, "")), hint: "Irish mobile (08X XXX XXXX) or Dublin landline (01 XXX XXXX)" },
     email: { test: v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), hint: "A valid email address, e.g. name@dublinhomes.ie" },
     buyerPhone: { test: v => /^\+?\d{7,15}$/.test(v.replace(/[\s-]/g, "")), hint: "7 to 15 digits, e.g. 085 123 4567 or +353 85 123 4567" },
-    signingPassword: { test: v => v.length >= 8, hint: "At least 8 characters. This locks the agent's private signing key and cannot be recovered if forgotten." }
+    signingPassword: { test: v => v.length >= 8, hint: "At least 8 characters. This locks the agent's private signing key and cannot be recovered if forgotten." },
+    // Member 1: same rule as isStrongEnough() in crypto/passwords.js
+    password: { test: v => v.length >= 8 && /[A-Za-z]/.test(v) && /\d/.test(v), hint: "At least 8 characters, with a letter and a number. Used to log in." }
 };
 function attachFieldGuide(inputId, hintId, guideKey) {
     const input = document.getElementById(inputId);
@@ -118,22 +120,19 @@ async function loadAreasDropdown() {
 
 
 
-// Feeds the agent dropdown on the add page, same fetch-then-populate pattern as areas above.
-// I clear it first rather than only appending, so calling this again after addAgent() adds a
-// new agent doesn't leave the old options duplicated underneath the fresh full list.
+// Member 1: the old agent dropdown (loadAgentsDropdown) was removed. A listing now always
+// belongs to - and is signed by - the logged-in agent. The server takes the agent from the
+// session, not from the form.
 
-
-async function loadAgentsDropdown() {
-    const response = await fetch("/api/agents");
-    const agents = await response.json();
-    const select = document.getElementById("agentId");
-    select.innerHTML = '<option value="">Select an agent...</option>';
-    agents.forEach(a => {
-        const option = document.createElement("option");
-        option.value = a.id;
-        option.textContent = `${a.name} (${a.phone})`;
-        select.appendChild(option);
-    });
+// Member 1: shows the listing form only to a logged-in agent, and says who they're listing as.
+async function setUpAddPageForLogin() {
+    const agent = await authReady;
+    if (agent) {
+        document.getElementById("listingAsName").textContent = agent.name;
+        document.getElementById("add-listing-form").style.display = "block";
+    } else {
+        document.getElementById("loginRequired").style.display = "block";
+    }
 }
 
 // This is its own submit handler, separate from addListing(), since adding an agent is a
@@ -149,6 +148,8 @@ async function addAgent(event) {
         name: document.getElementById("agentName").value,
         phone: document.getElementById("agentPhone").value,
         email: document.getElementById("agentEmail").value,
+        // Member 1: the login password - the server stores only its scrypt hash.
+        password: document.getElementById("agentPassword").value,
         // Used once by the server to lock this agent's new private key, then discarded.
         signingPassword: document.getElementById("agentSigningPassword").value
     };
@@ -165,11 +166,8 @@ async function addAgent(event) {
             responseMessage.textContent = `Error: ${data.error}`;
         } else {
             responseMessage.style.color = "#27ae60";
-            responseMessage.textContent = `Agent "${data.agent.name}" added with their own signing key (fingerprint ${data.agent.key_fingerprint}).`;
+            responseMessage.textContent = `Agent "${data.agent.name}" added with their own signing key (fingerprint ${data.agent.key_fingerprint}). They can now log in.`;
             document.getElementById("add-agent-form").reset();
-            // Re-pulling the full agent list rather than just appending one option locally,
-            // so the dropdown stays a true reflection of what's actually in the database.
-            loadAgentsDropdown();
         }
     } catch (error) {
         responseMessage.style.color = "#c0392b";
@@ -293,7 +291,7 @@ async function addListing(event) {
         routingKey: document.getElementById("routingKey").value,
         streetId: document.getElementById("streetId").value,
         eircode: document.getElementById("eircode").value,
-        agentId: document.getElementById("agentId").value,
+        // Member 1: no agentId here any more - the server uses the logged-in agent.
         features: features,
         imageData: imageData,
         imageType: imageType,
@@ -310,7 +308,11 @@ async function addListing(event) {
             body: JSON.stringify(listingData)
         });
         const data = await response.json();
-        if (!response.ok) {
+        if (response.status === 401) {
+            // Member 1: their session expired (2 hours) or they logged out in another tab
+            responseMessage.style.color = "#c0392b";
+            responseMessage.textContent = "Your login has expired. Please log in again.";
+        } else if (!response.ok) {
             responseMessage.style.color = "#c0392b";
             responseMessage.textContent = `Error: ${data.error}`;
         } else {
@@ -346,6 +348,7 @@ async function addListing(event) {
 // HOME / LISTINGS PAGE 
 
 async function loadListings() {
+    await authReady; // Member 1: know who's logged in first, so "Your listing" badges are right
     const response = await fetch("/api/listings");
     allListings = await response.json();
     applyFilters();
@@ -410,6 +413,7 @@ function applyFilters() {
             <div class="listing-card-inner">
                 <div class="status-badge">${escapeHtml(l.status)}</div>
                 ${verificationBadge(l)}
+                ${currentAgent && l.agent_id === currentAgent.id ? '<div class="owner-badge">Your listing</div>' : ''}
                 <img src="${l.image_url || '/assets/no-image.png'}" alt="${escapeHtml(l.title)}">
                 <div class="listing-overlay"></div>
             </div>
@@ -469,6 +473,25 @@ function openListingModal(id) {
 
     document.getElementById("modalImageFile").value = "";
     document.getElementById("modalRemoveImage").checked = false;
+
+    // Member 1: only the agent who owns this listing gets the edit controls. Everyone else
+    // sees it read-only. (The server enforces this too - this just avoids showing buttons
+    // that would only be refused.)
+    const canEdit = currentAgent && currentAgent.id === listing.agent_id;
+    ["modalPrice", "modalBedrooms", "modalBathrooms", "modalStatusSelect"].forEach(id => {
+        document.getElementById(id).disabled = !canEdit;
+    });
+    document.getElementById("modalPhotoControls").style.display = canEdit ? "block" : "none";
+    document.getElementById("modalEditControls").style.display = canEdit ? "block" : "none";
+    const ownerNote = document.getElementById("modalOwnerNote");
+    if (canEdit) {
+        ownerNote.style.display = "none";
+    } else {
+        ownerNote.style.display = "block";
+        ownerNote.textContent = currentAgent
+            ? `This listing belongs to ${listing.agent_name}. Only they can edit it.`
+            : "Agents: log in to edit your own listings.";
+    }
 
     originalData = {
         price: String(listing.price),
@@ -665,7 +688,7 @@ if (window.location.pathname.includes("index.html") || window.location.pathname 
 }
 if (window.location.pathname.includes("add.html")) {
     loadAreasDropdown();
-    loadAgentsDropdown();
+    setUpAddPageForLogin(); // Member 1 (replaces loadAgentsDropdown)
     attachFieldGuide("price", "priceHint", "price");
     attachFieldGuide("bedrooms", "bedroomsHint", "bedrooms");
     attachFieldGuide("bathrooms", "bathroomsHint", "bathrooms");
@@ -673,4 +696,5 @@ if (window.location.pathname.includes("add.html")) {
     attachFieldGuide("agentPhone", "agentPhoneHint", "phone");
     attachFieldGuide("agentEmail", "agentEmailHint", "email");
     attachFieldGuide("agentSigningPassword", "agentSigningPasswordHint", "signingPassword");
-}
+    attachFieldGuide("agentPassword", "agentPasswordHint", "password"); // Member 1
+}

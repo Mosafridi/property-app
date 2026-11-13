@@ -21,18 +21,8 @@ function showLoginPanel(message) {
     document.getElementById("requests-container").innerHTML = "";
 }
 
-async function loadAgentsForLogin() {
-    const response = await fetch("/api/agents");
-    const agents = await response.json();
-    const select = document.getElementById("loginAgent");
-    select.innerHTML = '<option value="">Select an agent...</option>';
-    agents.forEach(a => {
-        const option = document.createElement("option");
-        option.value = a.id;
-        option.textContent = a.name;
-        select.appendChild(option);
-    });
-}
+// The inbox used to have its own login form here (agent + signing password). It now uses the
+// site's one agent login (Member 1's login.html), so loadAgentsForLogin() and logIn() were removed.
 
 // One card per viewing request. A request the server could not open (its tamper seal did
 // not match) arrives with opened:false and no content, and gets a warning card instead.
@@ -81,45 +71,15 @@ async function loadInbox() {
     }
 }
 
-async function logIn(event) {
-    event.preventDefault();
-    const loginMessage = document.getElementById("loginMessage");
-    const loginBtn = document.getElementById("loginBtn");
-    loginMessage.textContent = "";
-    loginBtn.disabled = true;
-
-    try {
-        const response = await fetch("/api/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                agentId: document.getElementById("loginAgent").value,
-                signingPassword: document.getElementById("loginPassword").value
-            })
-        });
-        const data = await response.json();
-        // The password box is cleared either way, so it is not left sitting in the page.
-        document.getElementById("loginPassword").value = "";
-        if (!response.ok) {
-            loginMessage.textContent = `Error: ${data.error}`;
-        } else {
-            await loadInbox();
-        }
-    } catch (error) {
-        loginMessage.textContent = `Error: ${error.message}`;
-    } finally {
-        loginBtn.disabled = false;
-    }
-}
-
 async function logOut() {
     try {
         await fetch("/api/logout", { method: "POST" });
     } finally {
-        // The messages are removed from the page straight away, not just hidden.
+        // The messages are removed from the page straight away, not just hidden, and the page
+        // reloads so the nav bar shows "Agent login" again.
         showLoginPanel("");
+        window.location.reload();
     }
 }
 
-loadAgentsForLogin();
 loadInbox();
