@@ -9,6 +9,9 @@ const { URL } = require('url');
 const { DB_PATH} = require('./config');
 const signing = require('./signing');
 const encryption = require('./encryption');
+// Member 1 - Authentication (agent login)
+const { hashPassword, verifyPassword, isStrongEnough } = require('./crypto/passwords');
+const { createSession, getLoggedInAgent, destroySession, ensureAuthSchema } = require('./crypto/sessions');
 const crypto = require('crypto');
 console.log("Config loaded");
 console.log("  DB_PATH:", DB_PATH);
@@ -28,6 +31,9 @@ signing.ensureSchema(db);
 
 // Creates the viewing_requests table if this database does not have it yet.
 encryption.ensureSchema(db);
+
+// Member 1: adds the password_hash column and the sessions table if missing.
+ensureAuthSchema(db);
 
 // The secret key that scrambles viewing requests. It is read once here, from an environment
 // variable or the git-ignored .env file - it is never written in the code, never stored in
@@ -264,49 +270,14 @@ function sendRequestError(res, err) {
     return sendJson(res, 500, { error: "Server error" });
 }
 
-// Agent login sessions. An agent proves who they are with the signing password they already
-// have, and the server then hands their browser a long random token in a cookie:
-//   - HttpOnly, so JavaScript on the page cannot read it,
-//   - SameSite=Strict, so another website cannot make the browser send it.
-// The sessions themselves live in memory only, so restarting the server logs everyone out.
-const SESSION_COOKIE = "agent_session";
-const SESSION_MINUTES = 30;
-const sessions = new Map(); // token -> { agentId, expiresAt }
-
-function sessionCookie(token, maxAgeSeconds) {
-    return `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAgeSeconds}`;
-}
-
-function startSession(agentId) {
-    // Clear out sessions that have run out, so the map does not grow forever.
-    for (const [token, session] of sessions) {
-        if (session.expiresAt <= Date.now()) sessions.delete(token);
-    }
-    const token = crypto.randomBytes(32).toString("hex");
-    sessions.set(token, { agentId, expiresAt: Date.now() + SESSION_MINUTES * 60 * 1000 });
-    return token;
-}
-
-function sessionTokenFrom(req) {
-    const cookies = (req.headers.cookie || "").split(";").map(c => c.trim());
-    const match = cookies.find(c => c.startsWith(SESSION_COOKIE + "="));
-    return match ? match.slice(SESSION_COOKIE.length + 1) : null;
-}
-
-// Returns the logged-in agent's session, or null if there is no valid, unexpired one.
-function getSession(req) {
-    const token = sessionTokenFrom(req);
-    const session = token ? sessions.get(token) : null;
-    if (!session) return null;
-    if (session.expiresAt <= Date.now()) {
-        sessions.delete(token);
-        return null;
-    }
-    return session;
-}
+// Agent login sessions are handled by Member 1's login (crypto/sessions.js): one login for the
+// whole site, with sessions stored as SHA-256 hashes in the database. Member 3's inbox
+// originally had its own login here; it was combined into Member 1's so agents only log in once.
 
 // Slows down password guessing on the login form: after 5 wrong passwords in a row for an
 // agent, logins for that agent are refused for 5 minutes.
+// (Written by Member 3 for the inbox login, and kept in Member 1's /api/login below when the
+// two logins were combined.)
 const MAX_LOGIN_FAILURES = 5;
 const LOGIN_LOCK_MINUTES = 5;
 const loginFailures = new Map(); // agentId -> { count, lockedUntil }
@@ -321,6 +292,23 @@ function recordLoginFailure(agentId) {
     loginFailures.set(agentId, entry);
 }
 
+// ===== Member 1 - Authentication helpers =====
+
+// Used by every route that changes data. If nobody is logged in it sends a 401
+// and returns null, so the route can just do: if (!agent) return;
+function requireLogin(req, res) {
+    const agent = getLoggedInAgent(db, req);
+    if (!agent) {
+        sendJson(res, 401, { error: "You must be logged in as an agent to do this." });
+        return null;
+    }
+    return agent;
+}
+
+// A real scrypt hash of a random value. If someone logs in with an email that
+// doesn't exist, I still run verifyPassword against this, so the response takes
+// the same time either way and can't be used to find out which emails are real.
+const DUMMY_HASH = hashPassword(crypto.randomBytes(16).toString('hex'));
 
 const server = http.createServer(async (req, res) => {
     const parsed = new URL(req.url, `http://${req.headers.host}`);
@@ -403,6 +391,10 @@ const server = http.createServer(async (req, res) => {
                 if (!signing.isValidSigningPassword(data.signingPassword)) {
                     problems.push(`signing password (at least ${signing.MIN_PASSWORD_LENGTH} characters)`);
                 }
+                // Member 1: and a login password, so they can log in to manage their listings.
+                if (!isStrongEnough(data.password)) {
+                    problems.push("login password (at least 8 characters, with a letter and a number)");
+                }
                 if (problems.length > 0) {
                     res.writeHead(400, { "Content-Type": "application/json" });
                     return res.end(JSON.stringify({
@@ -427,8 +419,9 @@ const server = http.createServer(async (req, res) => {
                 // key goes into the database already encrypted with their signing password, and
                 // the password itself is thrown away as soon as this request finishes.
                 const keys = signing.generateAgentKeys(data.signingPassword);
-                const result = db.prepare("INSERT INTO agents (name, phone, email, public_key, enc_private_key, key_created_at) VALUES (?, ?, ?, ?, ?, ?)")
-                    .run(data.name.trim(), phone, email, keys.publicKeyPem, keys.encPrivateKey, new Date().toISOString());
+                // Member 1: the login password is stored only as a salted scrypt hash.
+                const result = db.prepare("INSERT INTO agents (name, phone, email, public_key, enc_private_key, key_created_at, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?)")
+                    .run(data.name.trim(), phone, email, keys.publicKeyPem, keys.encPrivateKey, new Date().toISOString(), hashPassword(data.password));
                 res.writeHead(200, { "Content-Type": "application/json" });
                 return res.end(JSON.stringify({
                     message: "Agent added successfully.",
@@ -448,6 +441,60 @@ const server = http.createServer(async (req, res) => {
 
 
 
+
+    // ===== Member 1 - Authentication routes =====
+
+    // Login: check the password against the stored scrypt hash, then start a session.
+    if (req.method === "POST" && parsed.pathname === "/api/login") {
+        try {
+            const data = await readJsonBody(req, 10 * 1024);
+            const email = typeof data.email === "string" ? data.email.trim() : "";
+            const password = typeof data.password === "string" ? data.password : "";
+
+            const agent = db.prepare("SELECT id, name, email, password_hash FROM agents WHERE email = ?").get(email);
+
+            // Member 3's lockout: refuse straight away if this agent has had too many wrong tries.
+            const failures = agent ? loginFailures.get(agent.id) : null;
+            if (failures && failures.lockedUntil > Date.now()) {
+                return sendJson(res, 429, { error: "Too many wrong attempts. Try again in a few minutes." });
+            }
+
+            // Always run the (slow) password check, even for an unknown email,
+            // so the response time doesn't give away which emails exist.
+            const passwordOk = verifyPassword(password, agent && agent.password_hash ? agent.password_hash : DUMMY_HASH);
+
+            if (!agent || !agent.password_hash || !passwordOk) {
+                if (agent) recordLoginFailure(agent.id);
+                console.log(`Failed login attempt for "${email}"`);
+                // Same message for wrong email AND wrong password - don't tell an
+                // attacker which half they got right.
+                return sendJson(res, 401, { error: "Invalid email or password." });
+            }
+
+            loginFailures.delete(agent.id);
+            // A brand-new token on every login (Week 2: stops session fixation).
+            const cookie = createSession(db, agent.id);
+            console.log(`Agent ${agent.id} logged in`);
+            return sendJson(res, 200,
+                { message: "Logged in.", agent: { id: agent.id, name: agent.name, email: agent.email } },
+                { "Set-Cookie": cookie });
+        } catch (err) {
+            return sendRequestError(res, err);
+        }
+    }
+
+    // Logout: delete the session on the server AND tell the browser to drop the cookie.
+    if (req.method === "POST" && parsed.pathname === "/api/logout") {
+        const cookie = destroySession(db, req);
+        return sendJson(res, 200, { message: "Logged out." }, { "Set-Cookie": cookie });
+    }
+
+    // Lets the front-end ask "who is logged in?" to show/hide buttons.
+    // The cookie itself is HttpOnly, so the page's JavaScript can't read it directly.
+    if (req.method === "GET" && parsed.pathname === "/api/me") {
+        const agent = getLoggedInAgent(db, req);
+        return sendJson(res, 200, { agent });
+    }
 
     // This is the "checker anyone can use" part. It hands back everything needed to check a
     // listing's stamp without trusting my server: the exact text that was signed, the
@@ -554,6 +601,9 @@ const server = http.createServer(async (req, res) => {
     // I validate everything server-side before this ever touches the database
     if (req.method === "POST" && parsed.pathname === "/api/listings") {
         console.log("POST /api/listings received");
+        // Member 1: only a logged-in agent can add a listing.
+        const loggedInAgent = requireLogin(req, res);
+        if (!loggedInAgent) return;
         let body = "";
         let tooLarge = false;
         req.on("data", chunk => {
@@ -574,6 +624,10 @@ const server = http.createServer(async (req, res) => {
             }
             try {
                 const data = JSON.parse(body);
+                // Member 1: the listing ALWAYS belongs to whoever is logged in. I ignore any
+                // agentId sent from the form, so nobody can post a listing as someone else.
+                // This is also the agent whose key signs it below.
+                data.agentId = loggedInAgent.id;
                 // The signing password and the photo bytes are kept out of the console log.
                 console.log("Listing data:", {
                     ...data,
@@ -660,6 +714,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "PUT" && parsed.pathname.startsWith("/api/listings/")) {
         const listingId = parsed.pathname.split("/").pop();
         console.log("PUT /api/listings received for ID:", listingId);
+        // Member 1: must be logged in to edit.
+        const loggedInAgent = requireLogin(req, res);
+        if (!loggedInAgent) return;
         let body = "";
         req.on("data", chunk => (body += chunk));
         req.on("end", () => {
@@ -688,6 +745,14 @@ const server = http.createServer(async (req, res) => {
                 if (!currentListing) {
                     res.writeHead(404, { "Content-Type": "application/json" });
                     return res.end(JSON.stringify({ error: "Listing not found" }));
+                }
+
+                // Member 1: logged in isn't enough - you can only edit YOUR OWN listings.
+                // Without this, any agent could change any other agent's prices
+                // (Week 1: "broken access control"). Checked before the signing password,
+                // so another agent can't even use this route to test passwords.
+                if (currentListing.agent_id !== loggedInAgent.id) {
+                    return sendJson(res, 403, { error: "You can only edit your own listings." });
                 }
 
                 // Only the agent who owns the listing can change it, because the change has to
@@ -828,8 +893,16 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "DELETE" && parsed.pathname.startsWith("/api/listings/")) {
         const listingId = parsed.pathname.split("/").pop();
         console.log("DELETE /api/listings received for ID:", listingId);
+        // Member 1: must be logged in to delete.
+        const loggedInAgent = requireLogin(req, res);
+        if (!loggedInAgent) return;
 
         try {
+            // Member 1: check who owns it first - you can only delete your own listings.
+            const owner = db.prepare("SELECT agent_id FROM property_listings WHERE id = ?").get(listingId);
+            if (owner && owner.agent_id !== loggedInAgent.id) {
+                return sendJson(res, 403, { error: "You can only delete your own listings." });
+            }
             const result = db.prepare("DELETE FROM property_listings WHERE id = ?").run(listingId);
             if (result.changes === 0) {
                 res.writeHead(404, { "Content-Type": "application/json" });
@@ -893,50 +966,6 @@ const server = http.createServer(async (req, res) => {
         }
     }
 
-    // Agent login for the inbox. The password is checked by trying to unlock the agent's
-    // private signing key with it - the same proof the listing forms already rely on - so
-    // there is no second password to store. It is used in memory and then thrown away.
-    if (req.method === "POST" && parsed.pathname === "/api/login") {
-        try {
-            const data = await readJsonBody(req, 10 * 1024);
-            const agent = db.prepare("SELECT id, name, enc_private_key FROM agents WHERE id = ?").get(Number(data.agentId));
-
-            const failures = agent ? loginFailures.get(agent.id) : null;
-            if (failures && failures.lockedUntil > Date.now()) {
-                return sendJson(res, 429, { error: "Too many wrong attempts. Try again in a few minutes." });
-            }
-
-            let passwordOk = false;
-            if (agent && agent.enc_private_key && typeof data.signingPassword === "string" && data.signingPassword !== "") {
-                try {
-                    signing.unlockPrivateKey(agent.enc_private_key, data.signingPassword);
-                    passwordOk = true;
-                } catch (err) {
-                    if (err.code !== "BAD_PASSWORD") throw err;
-                }
-            }
-            if (!passwordOk) {
-                if (agent) recordLoginFailure(agent.id);
-                return sendJson(res, 401, { error: "Wrong agent or signing password." });
-            }
-
-            loginFailures.delete(agent.id);
-            const token = startSession(agent.id);
-            console.log("Agent logged in to the inbox, id:", agent.id);
-            return sendJson(res, 200, { message: "Logged in.", agent: { id: agent.id, name: agent.name } },
-                { "Set-Cookie": sessionCookie(token, SESSION_MINUTES * 60) });
-        } catch (err) {
-            return sendRequestError(res, err);
-        }
-    }
-
-    // Logging out forgets the session on the server and tells the browser to drop the cookie.
-    if (req.method === "POST" && parsed.pathname === "/api/logout") {
-        const token = sessionTokenFrom(req);
-        if (token) sessions.delete(token);
-        return sendJson(res, 200, { message: "Logged out." }, { "Set-Cookie": sessionCookie("", 0) });
-    }
-
     // The agent's inbox. This is the only place viewing requests are ever unscrambled, and
     // only for the agent whose session cookie came with the request - the agent id comes from
     // the session, never from anything the browser can choose, so one agent cannot ask for
@@ -944,22 +973,23 @@ const server = http.createServer(async (req, res) => {
     // and none of its content is sent.
     if (req.method === "GET" && parsed.pathname === "/api/inbox") {
         try {
-            const session = getSession(req);
-            if (!session) {
+            // Uses Member 1's login: the agent comes from their session cookie.
+            const loggedInAgent = getLoggedInAgent(db, req);
+            if (!loggedInAgent) {
                 return sendJson(res, 401, { error: "Log in to read your inbox." });
             }
             if (!viewingKey) {
                 return sendJson(res, 503, { error: "The inbox is switched off because the server has no encryption key yet." });
             }
 
-            const agent = db.prepare("SELECT id, name FROM agents WHERE id = ?").get(session.agentId);
+            const agent = db.prepare("SELECT id, name FROM agents WHERE id = ?").get(loggedInAgent.id);
             const rows = db.prepare(`
                 SELECT vr.*, l.title AS listing_title
                 FROM viewing_requests vr
                 JOIN property_listings l ON l.id = vr.listing_id
                 WHERE vr.agent_id = ?
                 ORDER BY vr.created_at DESC, vr.id DESC
-            `).all(session.agentId);
+            `).all(loggedInAgent.id);
 
             const requests = rows.map(row => {
                 const summary = { id: row.id, listingId: row.listing_id, listingTitle: row.listing_title, receivedAt: row.created_at };
@@ -1075,4 +1105,4 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(3000, () => {
     console.log("Server running at http://localhost:3000");
-});
+});
