@@ -4,7 +4,11 @@
         <title>Add Listing</title>
         <style>
             body{font-family:Arial,sans-serif;margin:0;padding:20px;background:#f4f4f4;}
-            nav{background:#2c3e50;padding:10px;margin-bottom:20px;}
+            nav{background:#2c3e50;padding:10px;margin-bottom:20px;display:flex;align-items:center;flex-wrap:wrap;}
+            .auth-status{margin-left:auto;color:#fff;display:flex;gap:15px;align-items:center;}
+            .auth-status a{margin-right:0;font-weight:bold;}
+            .login-required{background:#fff;padding:20px;border-radius:8px;max-width:480px;box-shadow:0 2px 5px rgba(0,0,0,0.1);}
+            .listing-as{background:#eaf2f8;padding:10px;border-radius:4px;margin-top:12px;font-size:14px;}
             nav a{color:#fff;text-decoration:none;margin-right:15px;}
             nav a:hover{text-decoration:underline;}
             h1{color:#333;}
@@ -55,6 +59,12 @@
                 <input id="agentEmail" type="email" placeholder="e.g. fiona.kavanagh@dublinhomes.ie">
                 <small id="agentEmailHint" class="field-hint"></small>
 
+                <!-- Member 1: the LOGIN password - used to log in to the website. The server only
+                     stores a salted scrypt hash of it, never the password itself. -->
+                <label for="agentPassword">Login password:</label>
+                <input id="agentPassword" type="password" autocomplete="new-password" required>
+                <small id="agentPasswordHint" class="field-hint"></small>
+
                 <!-- Each agent gets their own signing key when they are added. This password
                      locks the private half of it, so only this agent can stamp listings. -->
                 <label for="agentSigningPassword">Signing password:</label>
@@ -66,7 +76,13 @@
             <p id="agentResponseMessage"></p>
         </details>
 
-        <form id="add-listing-form" onsubmit="addListing(event)">
+        <!-- Member 1: shown instead of the listing form when nobody is logged in -->
+        <div id="loginRequired" class="login-required" style="display:none;">
+            <p><strong>You need to be logged in as an agent to add a listing.</strong></p>
+            <p><a href="login.html?next=add.html">Log in here</a> - or add yourself as a new agent above first.</p>
+        </div>
+
+        <form id="add-listing-form" onsubmit="addListing(event)" style="display:none;">
             <label for="title">Title:</label>
             <input id="title" type="text" placeholder="e.g. 3-bed semi-detached in Drumcondra" required>
 
@@ -114,10 +130,9 @@
             <input id="eircode" type="text" placeholder="e.g. D02 AF30" required>
             <small id="eircodeHint" class="field-hint"></small>
 
-            <label for="agentId">Agent:</label>
-            <select id="agentId" required>
-                <option value="">Select an agent...</option>
-            </select>
+            <!-- Member 1: the agent dropdown is gone. The server now uses whoever is logged in,
+                 so nobody can post (or sign) a listing under someone else's name. -->
+            <p class="listing-as">Listing as: <strong id="listingAsName"></strong></p>
 
             <label>Features:</label>
             <div class="features-row">
@@ -137,14 +152,15 @@
 
             <!-- The listing is stamped with the selected agent's private key, and that key can
                  only be unlocked with that agent's own signing password. -->
-            <label for="signingPassword">Agent's signing password:</label>
+            <label for="signingPassword">Your signing password:</label>
             <input id="signingPassword" type="password" autocomplete="off" required>
-            <small class="field-hint">The selected agent's password. It unlocks their key to sign this listing and is not stored.</small>
+            <small class="field-hint">Your signing password (not your login password). It unlocks your key to sign this listing and is not stored.</small>
 
             <button type="submit">Add Listing</button>
         </form>
         <p id="responseMessage"></p>
         <div id="recent-listing"></div>
+        <script src="auth.js"></script>
         <script src="app.js"></script>
     </body>
-</html>
+</html>

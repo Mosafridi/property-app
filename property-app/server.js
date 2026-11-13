@@ -8,6 +8,9 @@ const path = require('path');
 const { URL } = require('url');
 const { DB_PATH} = require('./config');
 const signing = require('./signing');
+// Member 1 - Authentication (agent login)
+const { hashPassword, verifyPassword, isStrongEnough } = require('./crypto/passwords');
+const { createSession, getLoggedInAgent, destroySession, ensureAuthSchema } = require('./crypto/sessions');
 console.log("Config loaded");
 console.log("  DB_PATH:", DB_PATH);
 
@@ -23,6 +26,9 @@ const db = new Database(DB_PATH);
 // Adds the signing columns (agent keys, listing signatures) if this database was created
 // before the signing feature existed. It only adds what is missing, existing data is untouched.
 signing.ensureSchema(db);
+
+// Member 1: same idea for login - adds the password_hash column and the sessions table if missing.
+ensureAuthSchema(db);
 
 // I need this to serve index.html, add.html, analytics.html and their JS/CSS.
 // I resolve the request against the public folder and then check the result is still
@@ -194,6 +200,29 @@ function buildVerification(row, publicKeyPem) {
     };
 }
 
+// ===== Member 1 - Authentication helpers =====
+
+// Small helper so every auth response looks the same.
+function sendJSON(res, status, obj, extraHeaders = {}) {
+    res.writeHead(status, { "Content-Type": "application/json", ...extraHeaders });
+    return res.end(JSON.stringify(obj));
+}
+
+// Used by every route that changes data. If nobody is logged in it sends a 401
+// and returns null, so the route can just do: if (!agent) return;
+function requireLogin(req, res) {
+    const agent = getLoggedInAgent(db, req);
+    if (!agent) {
+        sendJSON(res, 401, { error: "You must be logged in as an agent to do this." });
+        return null;
+    }
+    return agent;
+}
+
+// A real scrypt hash of a random value. If someone logs in with an email that
+// doesn't exist, I still run verifyPassword against this, so the response takes
+// the same time either way and can't be used to find out which emails are real.
+const DUMMY_HASH = hashPassword(require('crypto').randomBytes(16).toString('hex'));
 
 const server = http.createServer(async (req, res) => {
     const parsed = new URL(req.url, `http://${req.headers.host}`);
@@ -276,6 +305,10 @@ const server = http.createServer(async (req, res) => {
                 if (!signing.isValidSigningPassword(data.signingPassword)) {
                     problems.push(`signing password (at least ${signing.MIN_PASSWORD_LENGTH} characters)`);
                 }
+                // Member 1: and a login password, so they can log in to manage their listings.
+                if (!isStrongEnough(data.password)) {
+                    problems.push("login password (at least 8 characters, with a letter and a number)");
+                }
                 if (problems.length > 0) {
                     res.writeHead(400, { "Content-Type": "application/json" });
                     return res.end(JSON.stringify({
@@ -300,8 +333,9 @@ const server = http.createServer(async (req, res) => {
                 // key goes into the database already encrypted with their signing password, and
                 // the password itself is thrown away as soon as this request finishes.
                 const keys = signing.generateAgentKeys(data.signingPassword);
-                const result = db.prepare("INSERT INTO agents (name, phone, email, public_key, enc_private_key, key_created_at) VALUES (?, ?, ?, ?, ?, ?)")
-                    .run(data.name.trim(), phone, email, keys.publicKeyPem, keys.encPrivateKey, new Date().toISOString());
+                // Member 1: the login password is stored only as a salted scrypt hash.
+                const result = db.prepare("INSERT INTO agents (name, phone, email, public_key, enc_private_key, key_created_at, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?)")
+                    .run(data.name.trim(), phone, email, keys.publicKeyPem, keys.encPrivateKey, new Date().toISOString(), hashPassword(data.password));
                 res.writeHead(200, { "Content-Type": "application/json" });
                 return res.end(JSON.stringify({
                     message: "Agent added successfully.",
@@ -321,6 +355,59 @@ const server = http.createServer(async (req, res) => {
 
 
 
+
+    // ===== Member 1 - Authentication routes =====
+
+    // Login: check the password against the stored scrypt hash, then start a session.
+    if (req.method === "POST" && parsed.pathname === "/api/login") {
+        let body = "";
+        req.on("data", chunk => {
+            if (body.length < 10000) body += chunk; // a login is tiny, so cap it
+        });
+        req.on("end", () => {
+            try {
+                const data = JSON.parse(body || "{}");
+                const email = (data.email || "").trim();
+                const password = data.password || "";
+
+                const agent = db.prepare("SELECT id, name, email, password_hash FROM agents WHERE email = ?").get(email);
+
+                // Always run the (slow) password check, even for an unknown email,
+                // so the response time doesn't give away which emails exist.
+                const passwordOk = verifyPassword(password, agent && agent.password_hash ? agent.password_hash : DUMMY_HASH);
+
+                if (!agent || !agent.password_hash || !passwordOk) {
+                    console.log(`Failed login attempt for "${email}"`);
+                    // Same message for wrong email AND wrong password - don't tell an
+                    // attacker which half they got right.
+                    return sendJSON(res, 401, { error: "Invalid email or password." });
+                }
+
+                // A brand-new token on every login (Week 2: stops session fixation).
+                const cookie = createSession(db, agent.id);
+                console.log(`Agent ${agent.id} logged in`);
+                return sendJSON(res, 200,
+                    { message: "Logged in.", agent: { id: agent.id, name: agent.name, email: agent.email } },
+                    { "Set-Cookie": cookie });
+            } catch (err) {
+                return sendJSON(res, 400, { error: "Invalid request." });
+            }
+        });
+        return;
+    }
+
+    // Logout: delete the session on the server AND tell the browser to drop the cookie.
+    if (req.method === "POST" && parsed.pathname === "/api/logout") {
+        const cookie = destroySession(db, req);
+        return sendJSON(res, 200, { message: "Logged out." }, { "Set-Cookie": cookie });
+    }
+
+    // Lets the front-end ask "who is logged in?" to show/hide buttons.
+    // The cookie itself is HttpOnly, so the page's JavaScript can't read it directly.
+    if (req.method === "GET" && parsed.pathname === "/api/me") {
+        const agent = getLoggedInAgent(db, req);
+        return sendJSON(res, 200, { agent });
+    }
 
     // This is the "checker anyone can use" part. It hands back everything needed to check a
     // listing's stamp without trusting my server: the exact text that was signed, the
@@ -427,6 +514,9 @@ const server = http.createServer(async (req, res) => {
     // I validate everything server-side before this ever touches the database
     if (req.method === "POST" && parsed.pathname === "/api/listings") {
         console.log("POST /api/listings received");
+        // Member 1: only a logged-in agent can add a listing.
+        const loggedInAgent = requireLogin(req, res);
+        if (!loggedInAgent) return;
         let body = "";
         let tooLarge = false;
         req.on("data", chunk => {
@@ -447,6 +537,10 @@ const server = http.createServer(async (req, res) => {
             }
             try {
                 const data = JSON.parse(body);
+                // Member 1: the listing ALWAYS belongs to whoever is logged in. I ignore any
+                // agentId sent from the form, so nobody can post a listing as someone else.
+                // This is also the agent whose key signs it below.
+                data.agentId = loggedInAgent.id;
                 // The signing password and the photo bytes are kept out of the console log.
                 console.log("Listing data:", {
                     ...data,
@@ -533,6 +627,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "PUT" && parsed.pathname.startsWith("/api/listings/")) {
         const listingId = parsed.pathname.split("/").pop();
         console.log("PUT /api/listings received for ID:", listingId);
+        // Member 1: must be logged in to edit.
+        const loggedInAgent = requireLogin(req, res);
+        if (!loggedInAgent) return;
         let body = "";
         req.on("data", chunk => (body += chunk));
         req.on("end", () => {
@@ -561,6 +658,14 @@ const server = http.createServer(async (req, res) => {
                 if (!currentListing) {
                     res.writeHead(404, { "Content-Type": "application/json" });
                     return res.end(JSON.stringify({ error: "Listing not found" }));
+                }
+
+                // Member 1: logged in isn't enough - you can only edit YOUR OWN listings.
+                // Without this, any agent could change any other agent's prices
+                // (Week 1: "broken access control"). Checked before the signing password,
+                // so another agent can't even use this route to test passwords.
+                if (currentListing.agent_id !== loggedInAgent.id) {
+                    return sendJSON(res, 403, { error: "You can only edit your own listings." });
                 }
 
                 // Only the agent who owns the listing can change it, because the change has to
@@ -701,8 +806,16 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "DELETE" && parsed.pathname.startsWith("/api/listings/")) {
         const listingId = parsed.pathname.split("/").pop();
         console.log("DELETE /api/listings received for ID:", listingId);
+        // Member 1: must be logged in to delete.
+        const loggedInAgent = requireLogin(req, res);
+        if (!loggedInAgent) return;
 
         try {
+            // Member 1: check who owns it first - you can only delete your own listings.
+            const owner = db.prepare("SELECT agent_id FROM property_listings WHERE id = ?").get(listingId);
+            if (owner && owner.agent_id !== loggedInAgent.id) {
+                return sendJSON(res, 403, { error: "You can only delete your own listings." });
+            }
             const result = db.prepare("DELETE FROM property_listings WHERE id = ?").run(listingId);
             if (result.changes === 0) {
                 res.writeHead(404, { "Content-Type": "application/json" });
@@ -815,4 +928,4 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(3000, () => {
     console.log("Server running at http://localhost:3000");
-});
+});

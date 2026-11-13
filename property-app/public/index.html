@@ -4,7 +4,11 @@
         <title>Dublin Property Listings</title>
         <style>
             body{font-family:Arial,sans-serif;margin:0;padding:20px;background:#f4f4f4;}
-            nav{background:#2c3e50;padding:10px;margin-bottom:20px;}
+            nav{background:#2c3e50;padding:10px;margin-bottom:20px;display:flex;align-items:center;flex-wrap:wrap;}
+            .auth-status{margin-left:auto;color:#fff;display:flex;gap:15px;align-items:center;}
+            .auth-status a{margin-right:0;font-weight:bold;}
+            .owner-badge{position:absolute;bottom:5px;left:5px;background:#2980b9;color:#fff;padding:5px 10px;border-radius:4px;font-size:12px;}
+            .owner-note{background:#fef5e7;color:#7d5a17;padding:10px;border-radius:4px;font-size:14px;margin:0 0 10px;}
             nav a{color:#fff;text-decoration:none;margin-right:15px;}
             nav a:hover{text-decoration:underline;}
             h1{color:#2c3e50;}
@@ -132,11 +136,17 @@
                     <a id="modalProofLink" href="#" target="_blank" rel="noopener">View the signature proof (signed data, signature, public key)</a>
                 </div>
 
-                <label for="modalImageFile">Replace photo (JPG/PNG):</label>
-                <input id="modalImageFile" type="file" accept="image/jpeg,image/png" onchange="onFieldChange()">
-                <label style="font-weight:normal;display:flex;align-items:center;gap:6px;margin:8px 0;">
-                    <input id="modalRemoveImage" type="checkbox" style="width:auto;" onchange="onFieldChange()"> Remove current photo
-                </label>
+                <!-- Member 1: shown instead of the edit controls when you're not this listing's agent -->
+                <p id="modalOwnerNote" class="owner-note" style="display:none;"></p>
+
+                <!-- Member 1: wrapped in a div so the photo controls can be hidden for non-owners -->
+                <div id="modalPhotoControls">
+                    <label for="modalImageFile">Replace photo (JPG/PNG):</label>
+                    <input id="modalImageFile" type="file" accept="image/jpeg,image/png" onchange="onFieldChange()">
+                    <label style="font-weight:normal;display:flex;align-items:center;gap:6px;margin:8px 0;">
+                        <input id="modalRemoveImage" type="checkbox" style="width:auto;" onchange="onFieldChange()"> Remove current photo
+                    </label>
+                </div>
 
                 <label for="modalPrice">Price</label>
                 <input id="modalPrice" type="number" min="1" oninput="onFieldChange()">
@@ -174,6 +184,8 @@
                 </div>
                 <!-- Saving a change re-stamps the listing, and only this agent's password can
                      unlock the key that makes the stamp. -->
+                <!-- Member 1: wrapped with the buttons so non-owners don't see either -->
+                <div id="modalEditControls">
                 <label id="modalSigningPasswordLabel" for="modalSigningPassword">Signing password (needed to save changes)</label>
                 <input id="modalSigningPassword" type="password" autocomplete="off">
 
@@ -181,8 +193,10 @@
                     <button id="updateBtn" onclick="updateListing()" disabled style="background:#2c3e50;">Save Changes</button>
                     <button id="deleteBtn" onclick="confirmDelete()">Delete Listing</button>
                 </div>
+                </div>
             </div>
         </div>
+        <script src="auth.js"></script>
         <script src="app.js"></script>
     </body>
-</html>
+</html>

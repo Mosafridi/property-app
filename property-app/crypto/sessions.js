@@ -62,4 +62,23 @@ function destroySession(db, req) {
     return `${COOKIE_NAME}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`;
 }
 
-module.exports = { createSession, getLoggedInAgent, destroySession };
+// Adds what login needs to an existing database: a password_hash column on agents and the
+// sessions table. Safe to call every time the server starts - it only adds what is missing,
+// the same way signing.ensureSchema() does for the signing columns.
+function ensureAuthSchema(db) {
+    const agentColumns = db.prepare("PRAGMA table_info(agents)").all().map(c => c.name);
+    if (agentColumns.length === 0) return; // tables not created yet (seed.js has not been run)
+    if (!agentColumns.includes("password_hash")) {
+        db.exec("ALTER TABLE agents ADD COLUMN password_hash TEXT");
+    }
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS sessions (
+            token_hash TEXT PRIMARY KEY,
+            agent_id INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            FOREIGN KEY (agent_id) REFERENCES agents(id)
+        )
+    `);
+}
+
+module.exports = { createSession, getLoggedInAgent, destroySession, ensureAuthSchema };
